@@ -1,0 +1,80 @@
+[
+  {
+    "id": "abb-celestial-24",
+    "provider": "Celestial Broadband",
+    "title": "50% off NBN 100 for 6 months",
+    "category": "Utilities",
+    "description": "Reliable NBN 100 plan at half the standard rate for half a year.",
+    "promoPrice": 45.00,
+    "regularPrice": 90.00,
+    "promoMonths": 6,
+    "validUntil": "2026-09-01",
+    "url": "https://example.com/celestial",
+    "minCurrentSpend": 60.00
+  },
+  {
+    "id": "abb-streamplus-24",
+    "provider": "StreamPlus",
+    "title": "3 months free streaming bundle",
+    "category": "Media / Streaming",
+    "description": "Movies, shows and live sport all in one place for 3 months at zero cost.",
+    "promoPrice": 0.00,
+    "regularPrice": 29.99,
+    "promoMonths": 3,
+    "validUntil": "2026-09-15",
+    "url": "https://example.com/streamplus",
+    "minCurrentSpend": null
+  },
+  {
+    "id": "abb-fitfirst-24",
+    "provider": "FitFirst",
+    "title": "First month free + no lock-in",
+    "category": "Health / Fitness",
+    "description": "Try every class for free for 30 days, then stay at the standard rate with no contract.",
+    "promoPrice": 0.00,
+    "regularPrice": 49.99,
+    "promoMonths": 1,
+    "validUntil": "2026-08-15",
+    "url": "https://example.com/fitfirst",
+    "minCurrentSpend": null
+  },
+  {
+    "id": "abb-netlink-24",
+    "provider": "NetLink",
+    "title": "$10/mo off NBN 50 for 12 months",
+    "category": "Utilities",
+    "description": "Affordable home internet with a year-long discount on the standard plan.",
+    "promoPrice": 55.00,
+    "regularPrice": 65.00,
+    "promoMonths": 12,
+    "validUntil": "2026-10-01",
+    "url": "https://example.com/netlink",
+    "minCurrentSpend": 50.00
+  },
+  {
+    "id": "abb-picstream-24",
+    "provider": "PicStream",
+    "title": "Switch and save $10/mo for life",
+    "category": "Media / Streaming",
+    "description": "All the entertainment you want at a permanently lower price than the big names.",
+    "promoPrice": 8.99,
+    "regularPrice": 8.99,
+    "promoMonths": 24,
+    "validUntil": "2026-12-01",
+    "url": "https://example.com/picstream",
+    "minCurrentSpend": null
+  },
+  {
+    "id": "abb-yogaco-24",
+    "provider": "YogaCo",
+    "title": "50% off unlimited for 3 months",
+    "category": "Health / Fitness",
+    "description": "Unlimited yoga, pilates and meditation at half price for your first quarter.",
+    "promoPrice": 30.00,
+    "regularPrice": 60.00,
+    "promoMonths": 3,
+    "validUntil": "2026-09-01",
+    "url": "https://example.com/yogaco",
+    "minCurrentSpend": 20.00
+  }
+]
