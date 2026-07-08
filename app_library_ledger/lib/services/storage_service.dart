@@ -110,4 +110,11 @@ class StorageService {
       Category(name: 'Finance', color: const Color(0xFFFFC107)),
       Category(name: 'Health / Fitness', color: const Color(0xFFF44336)),
       Category(name: 'Media / Streaming', color: const Color(0xFF9C27B0)),
-      Cate
+      Category(name: 'Utilities', color: const Color(0xFF00BCD4)),
+      Category(name: 'Social', color: const Color(0xFFE91E63)),
+      Category(name: 'Education', color: const Color(0xFF673AB7)),
+      Category(name: 'Shopping', color: const Color(0xFFFF5722)),
+      Category(name: 'Travel', color: const Color(0xFF03A9F4)),
+    ];
+  }
+}
