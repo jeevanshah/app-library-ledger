@@ -23,9 +23,17 @@ class StorageService {
   }
 
   // App methods
+  /// Upsert: replaces the entry with the same id, or appends if new.
+  /// (Restored after the folder-flatten recovery reverted this to a
+  /// blind add, which made every edit create a duplicate entry.)
   Future<void> saveApp(AppEntry app) async {
     final apps = await getApps();
-    apps.add(app);
+    final index = apps.indexWhere((a) => a.id == app.id);
+    if (index >= 0) {
+      apps[index] = app;
+    } else {
+      apps.add(app);
+    }
     await _saveApps(apps);
   }
 
@@ -102,11 +110,4 @@ class StorageService {
       Category(name: 'Finance', color: const Color(0xFFFFC107)),
       Category(name: 'Health / Fitness', color: const Color(0xFFF44336)),
       Category(name: 'Media / Streaming', color: const Color(0xFF9C27B0)),
-      Category(name: 'Utilities', color: const Color(0xFF00BCD4)),
-      Category(name: 'Social', color: const Color(0xFFE91E63)),
-      Category(name: 'Education', color: const Color(0xFF673AB7)),
-      Category(name: 'Shopping', color: const Color(0xFFFF5722)),
-      Category(name: 'Travel', color: const Color(0xFF03A9F4)),
-    ];
-  }
-}
+      Cate

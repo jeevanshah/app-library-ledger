@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter --version)",
+      "PowerShell(flutter --version)",
+      "Read(//c//**)",
+      "Read(//c/Users/Deep/**)",
+      "Bash(/c/flutter/bin/flutter analyze *)",
+      "Bash(/c/flutter/bin/dart format *)",
+      "Bash(/c/flutter/bin/flutter test *)",
+      "Bash(cd \"/c/Users/Deep/Desktop/mobile-app/app-library-ledger/app_library_ledger\" && /c/flutter/bin/flutter test test/screen_smoke_test.dart 2>&1 > /tmp/test_output.txt; grep -n \"creator:\\\\|RenderFlex overflowed\\\\|relevant error-causing widget\\\\|The test description was\\\\|EXCEPTION CAUGHT\\\\|+.*-.*:\" /tmp/test_output.txt | head -150)",
+      "Read(//tmp/**)",
+      "Bash(/c/flutter/bin/flutter build *)"
+    ]
+  }
+}

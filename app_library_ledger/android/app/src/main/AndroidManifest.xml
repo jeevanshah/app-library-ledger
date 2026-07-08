@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <application
-        android:label="app_library_ledger"
+        android:label="App Library Ledger"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -27,19 +31,53 @@
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <!-- Google AdMob App ID (test ID — replace with real ID before publishing) -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713"/>
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
          https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <!--
+      BUILD-TIME CONSTRAINT: Every app_scan entry in assets/catalog.json
+      must have its packageName listed here 1:1. If a package is missing
+      from this block, detection will silently fail for that service.
+    -->
     <queries>
+        <!-- Required by Flutter's PROCESS_TEXT plugin -->
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Subscription detection — keep in sync with catalog.json app_scan entries -->
+        <package android:name="com.netflix.mediaclient"/>
+        <package android:name="com.spotify.music"/>
+        <package android:name="com.disney.disneyplus"/>
+        <package android:name="com.amazon.avod.thirdpartyclient"/>
+        <package android:name="com.apple.android.music"/>
+        <package android:name="com.wbd.stream"/>
+        <package android:name="com.dropbox.android"/>
+        <package android:name="notion.id"/>
+        <package android:name="com.openai.chatgpt"/>
+        <package android:name="com.pinterest"/>
+        <package android:name="com.evernote"/>
+        <package android:name="com.todoist"/>
+        <package android:name="com.getsomeheadspace.android"/>
+        <package android:name="au.com.stan.and"/>
+        <package android:name="au.com.streamotion.ares"/>
+        <package android:name="au.com.kayosports"/>
+        <package android:name="au.com.optus.sport"/>
+        <package android:name="com.cbs.ca"/>
     </queries>
 </manifest>
