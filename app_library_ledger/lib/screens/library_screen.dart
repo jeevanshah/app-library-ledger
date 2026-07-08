@@ -1,425 +1,1246 @@
+import 'dart:convert';
+import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_model.dart';
 import '../models/category_model.dart';
 import '../services/storage_service.dart';
+import '../services/notification_service.dart';
+import '../services/ad_service.dart';
+import '../services/analytics_service.dart';
+import '../services/app_icon_service.dart';
+import '../services/catalog_service.dart';
+import '../services/subscription_scanner.dart';
+import '../services/offers_service.dart';
+import '../services/offers_matcher.dart';
+import '../theme/app_tokens.dart';
 import 'add_app_screen.dart';
-import 'categories_screen.dart';
-import 'dart:html' as html;
-import 'package:fl_chart/fl_chart.dart';
-import 'package:hugeicons/hugeicons.dart';
-import '../theme/app_theme.dart';
+import 'settings_screen.dart';
+import 'offers_screen.dart';
 
-// Helper function to get app logo with first letter
-Widget getAppLogo(String appName, Color categoryColor) {
-  final initial = appName.isNotEmpty ? appName[0].toUpperCase() : '?';
-  
-  // Use first letter with gradient
-  return Container(
-    width: 56,
-    height: 56,
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        colors: [categoryColor, categoryColor.withOpacity(0.7)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-      borderRadius: BorderRadius.circular(16),
-      boxShadow: [
-        BoxShadow(
-          color: categoryColor.withOpacity(0.3),
-          blurRadius: 8,
-          offset: Offset(0, 4),
-        ),
-      ],
-    ),
-    child: Center(
-      child: Text(
-        initial,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 24,
-          fontWeight: FontWeight.bold,
-          letterSpacing: -0.5,
-        ),
-      ),
-    ),
-  );
-}
+final _fmt = NumberFormat.currency(
+  locale: 'en_US',
+  symbol: '\$',
+  decimalDigits: 2,
+);
+final _dateFmt = DateFormat('MMM d');
 
-// Helper function to get category icon
-IconData getCategoryIcon(String categoryName) {
-  switch (categoryName.toLowerCase()) {
-    case 'productivity':
-      return Icons.work_rounded;
-    case 'notes / journaling':
-      return Icons.edit_note_rounded;
-    case 'finance':
-      return Icons.account_balance_wallet_rounded;
-    case 'health / fitness':
-      return Icons.fitness_center_rounded;
-    case 'media / streaming':
-      return Icons.movie_rounded;
-    case 'utilities':
-      return Icons.build_rounded;
-    case 'social':
-      return Icons.people_rounded;
-    case 'education':
-      return Icons.school_rounded;
-    case 'shopping':
-      return Icons.shopping_bag_rounded;
-    case 'travel':
-      return Icons.flight_rounded;
-    default:
-      return Icons.apps_rounded;
-  }
-}
 class LibraryScreen extends StatefulWidget {
-  final VoidCallback onToggleTheme;
-  final ThemeMode themeMode;
-  
-  const LibraryScreen({
-    super.key,
-    required this.onToggleTheme,
-    required this.themeMode,
-  });
-
+  const LibraryScreen({super.key});
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-class _LibraryScreenState extends State<LibraryScreen> {
+class _LibraryScreenState extends State<LibraryScreen>
+    with TickerProviderStateMixin {
   late List<AppEntry> _apps = [];
-  late List<Category> _categories = [];
-  String _searchQuery = '';
-  String? _selectedCategory;
-  bool _showSubscriptionsOnly = false;
-  String? _selectedBillingCycle; // null, 'monthly', 'yearly'
-  String _sortBy = 'name'; // 'name', 'price', 'renewal', 'recent'
-  int _selectedTabIndex = 0; // 0 = list, 1 = dashboard
+  late List<Category> _cats = [];
+  bool _loading = true;
+  int _tab = 0;
+  String _q = '';
+  String? _cat;
+  bool _grid = false;
+  int _sortBy = 0;
+  Set<String> _installedPkgs = {};
+  Map<String, int> _dismissedInsights = {};
+  Set<String> _dismissedPromoResolve = {};
+  List<MatchedOffer> _matchedOffers = [];
+  bool _offersEnabled = false;
+
+  final _analytics = AnalyticsService();
+  final _ads = AdService();
+  final _scrollCtrl = ScrollController();
+  late final AnimationController _counterCtrl;
+  late final Animation<double> _counterAnim;
+  bool _cliffExpanded = false;
+  bool _insightsExpanded = false;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _counterCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    );
+    _counterAnim = CurvedAnimation(
+      parent: _counterCtrl,
+      curve: Curves.easeOutCubic,
+    );
+    _refresh();
   }
 
-  Future<void> _loadData() async {
+  @override
+  void dispose() {
+    _counterCtrl.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    setState(() => _loading = true);
     final apps = await StorageService().getApps();
-    final categories = await StorageService().getCategories();
+    final cats = await StorageService().getCategories();
+    if (!mounted) return;
+
+    final pkgNames = apps
+        .where((a) => a.packageName != null)
+        .map((a) => a.packageName!)
+        .toList();
+    if (pkgNames.isNotEmpty) await AppIconService().loadIcons(pkgNames);
+
+    // I4: Installed package scan
+    final catalog = CatalogService();
+    await catalog.loadCatalog();
+    final scanPkgs = catalog.appScanEntries.map((e) => e.packageName!).toList();
+    if (scanPkgs.isNotEmpty) {
+      try {
+        final installed = await packageScannerChannel
+            .invokeMethod<List<dynamic>>('checkPackagesSurgically', scanPkgs);
+        _installedPkgs = (installed ?? []).map((e) => e.toString()).toSet();
+      } catch (_) {
+        _installedPkgs = {};
+      }
+    }
+
+    // Dismissed insights
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('dismissed_insights');
+      if (raw != null) {
+        final decoded = jsonDecode(raw) as Map<String, dynamic>;
+        _dismissedInsights = decoded.map((k, v) => MapEntry(k, v as int));
+        _dismissedInsights.removeWhere(
+          (k, v) =>
+              (DateTime.now().millisecondsSinceEpoch - v) > (30 * 86400 * 1000),
+        );
+      }
+      final prRaw = prefs.getString('promo_resolve_dismissed');
+      if (prRaw != null) {
+        final prDecoded = jsonDecode(prRaw) as Map<String, dynamic>;
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
+        _dismissedPromoResolve = {};
+        for (final e in prDecoded.entries) {
+          final ts = e.value as int;
+          if ((nowMs - ts) < (7 * 86400 * 1000))
+            _dismissedPromoResolve.add(e.key);
+        }
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    // Fetch offers if enabled
+    final prefs = await SharedPreferences.getInstance();
+    _offersEnabled = prefs.getBool('offers_enabled') ?? false;
+    if (_offersEnabled) {
+      final offers = await OffersService().fetch(enabled: true);
+      final matcher = OffersMatcher(_analytics);
+      _matchedOffers = matcher.match(apps, offers);
+    } else {
+      _matchedOffers = [];
+    }
+
+    if (!mounted) return;
     setState(() {
       _apps = apps;
-      _categories = categories;
+      _cats = cats;
+      _loading = false;
     });
+    _counterCtrl.forward(from: 0);
   }
 
-  List<AppEntry> _getFilteredApps() {
-    var filtered = _apps
-        .where((app) =>
-            app.name.toLowerCase().contains(_searchQuery.toLowerCase()))
+  Future<void> _goAdd() async {
+    final ok = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => AddAppScreen(categories: _cats)),
+    );
+    if (ok == true) _refresh();
+  }
+
+  Future<void> _goEdit(AppEntry a) async {
+    final ok = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddAppScreen(categories: _cats, appToEdit: a),
+      ),
+    );
+    if (ok == true) _refresh();
+  }
+
+  Future<void> _deleteApp(AppEntry a) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTokens.cardBg,
+        title: Text(
+          'Delete?',
+          style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary),
+        ),
+        content: Text(
+          'Remove "${a.name}"?',
+          style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await StorageService().deleteApp(a.id);
+      await NotificationService().cancelReminders(a.id);
+      await NotificationService().cancelPromoReminders(a.id);
+      _refresh();
+    }
+  }
+
+  Future<void> _dismissInsight(String id) async {
+    _dismissedInsights[id] = DateTime.now().millisecondsSinceEpoch;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      'dismissed_insights',
+      jsonEncode(_dismissedInsights.map((k, v) => MapEntry(k, v))),
+    );
+    setState(() {});
+  }
+
+  Future<void> _showExpiredPromoSheet() async {
+    final expired = _analytics
+        .getExpiredPromos(_apps)
+        .where((a) => !_dismissedPromoResolve.contains(a.id))
+        .toList();
+    if (expired.isEmpty) return;
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTokens.cardBg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Expired Promos',
+                style: GoogleFonts.spaceGrotesk(
+                  color: AppTokens.textStrong,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ...expired.map(
+                (a) => Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTokens.fieldBg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTokens.hairline),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              a.name,
+                              style: GoogleFonts.plusJakartaSans(
+                                color: AppTokens.textPrimary,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              'Was \$${a.subscriptionCost?.toStringAsFixed(2)} → now \$${a.regularPrice?.toStringAsFixed(2)}',
+                              style: GoogleFonts.spaceGrotesk(
+                                color: AppTokens.textMuted,
+                                fontSize: 12,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          final updated = AppEntry(
+                            id: a.id,
+                            name: a.name,
+                            appStoreLink: a.appStoreLink,
+                            category: a.category,
+                            packageName: a.packageName,
+                            subscriptionCost: a.regularPrice,
+                            billingCycle: a.billingCycle,
+                            nextRenewalDate: a.nextRenewalDate,
+                            isActiveSubscription: a.isActiveSubscription,
+                            isPromotionalPrice: false,
+                          );
+                          await StorageService().saveApp(updated);
+                          await NotificationService().cancelPromoReminders(
+                            a.id,
+                          );
+                          Navigator.pop(ctx);
+                          _refresh();
+                        },
+                        child: Text(
+                          'Now paying \$${a.regularPrice?.toStringAsFixed(2)}',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          await _pickNewPromoEnd(a);
+                        },
+                        child: const Text(
+                          'Still on promo',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickNewPromoEnd(AppEntry a) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now().add(const Duration(days: 30)),
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2099),
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: AppTokens.brandEnd,
+            onPrimary: Colors.white,
+            surface: AppTokens.cardBg,
+            onSurface: AppTokens.textPrimary,
+          ),
+          dialogTheme: const DialogThemeData(backgroundColor: AppTokens.cardBg),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    final updated = AppEntry(
+      id: a.id,
+      name: a.name,
+      appStoreLink: a.appStoreLink,
+      category: a.category,
+      packageName: a.packageName,
+      subscriptionCost: a.subscriptionCost,
+      billingCycle: a.billingCycle,
+      nextRenewalDate: a.nextRenewalDate,
+      isActiveSubscription: a.isActiveSubscription,
+      isPromotionalPrice: true,
+      regularPrice: a.regularPrice,
+      promotionEndsDate: picked,
+    );
+    await StorageService().saveApp(updated);
+    await NotificationService().schedulePromoReminder(updated);
+    _refresh();
+  }
+
+  Future<void> _dismissPromoBanner(String appId) async {
+    _dismissedPromoResolve.add(appId);
+    final prefs = await SharedPreferences.getInstance();
+    final map = {
+      for (final id in _dismissedPromoResolve)
+        id: DateTime.now().millisecondsSinceEpoch,
+    };
+    await prefs.setString('promo_resolve_dismissed', jsonEncode(map));
+    setState(() {});
+  }
+
+  List<AppEntry> get _filtered {
+    var list = _apps.toList();
+    if (_q.isNotEmpty)
+      list = list
+          .where((a) => a.name.toLowerCase().contains(_q.toLowerCase()))
+          .toList();
+    if (_cat != null) list = list.where((a) => a.category == _cat).toList();
+    switch (_sortBy) {
+      case 1:
+        list.sort(
+          (a, b) =>
+              (b.subscriptionCost ?? 0).compareTo(a.subscriptionCost ?? 0),
+        );
+      case 2:
+        list.sort(
+          (a, b) => (a.nextRenewalDate ?? DateTime(2099)).compareTo(
+            b.nextRenewalDate ?? DateTime(2099),
+          ),
+        );
+      case 3:
+        list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      default:
+        list.sort((a, b) => a.name.compareTo(b.name));
+    }
+    return list;
+  }
+
+  Map<String, int> get _counts {
+    final m = <String, int>{};
+    for (final a in _apps) {
+      m[a.category] = (m[a.category] ?? 0) + 1;
+    }
+    return m;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final monthly = _analytics.getTotalMonthlyCost(_apps);
+    final active = _analytics.getActiveSubscriptionCount(_apps);
+    final filtered = _filtered;
+    final counts = _counts;
+    final expiredPromos = _analytics
+        .getExpiredPromos(_apps)
+        .where((a) => !_dismissedPromoResolve.contains(a.id))
         .toList();
 
-    if (_selectedCategory != null && _selectedCategory != 'All') {
-      filtered = filtered.where((app) => app.category == _selectedCategory).toList();
-    }
-
-    if (_showSubscriptionsOnly) {
-      filtered = filtered.where((app) => app.isActiveSubscription).toList();
-    }
-
-    if (_selectedBillingCycle != null) {
-      filtered = filtered.where((app) => 
-        app.isActiveSubscription && app.billingCycle == _selectedBillingCycle
-      ).toList();
-    }
-
-    // Sort
-    switch (_sortBy) {
-      case 'price':
-        filtered.sort((a, b) => (b.subscriptionCost ?? 0).compareTo(a.subscriptionCost ?? 0));
-        break;
-      case 'renewal':
-        filtered.sort((a, b) {
-          final aDate = a.nextRenewalDate ?? DateTime(2099);
-          final bDate = b.nextRenewalDate ?? DateTime(2099);
-          return aDate.compareTo(bDate);
-        });
-        break;
-      case 'recent':
-        filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        break;
-      default: // name
-        filtered.sort((a, b) => a.name.compareTo(b.name));
-    }
-
-    return filtered;
-  }
-
-  double _getTotalMonthlyCost() {
-    return _apps.where((app) => app.isActiveSubscription).fold(0.0, (sum, app) {
-      if (app.subscriptionCost == null) return sum;
-      if (app.billingCycle == 'yearly') {
-        return sum + (app.subscriptionCost! / 12);
-      }
-      return sum + app.subscriptionCost!;
-    });
-  }
-
-  double _getAverageCost() {
-    final subs = _apps.where((app) => app.isActiveSubscription).toList();
-    if (subs.isEmpty) return 0;
-    return _getTotalMonthlyCost() / subs.length;
-  }
-
-  AppEntry? _getMostExpensive() {
-    if (_apps.isEmpty) return null;
-    AppEntry? max;
-    for (var app in _apps.where((a) => a.isActiveSubscription)) {
-      if (max == null || (app.subscriptionCost ?? 0) > (max.subscriptionCost ?? 0)) {
-        max = app;
-      }
-    }
-    return max;
-  }
-
-  Map<String, double> _getSpendingByCategory() {
-    final spending = <String, double>{};
-    for (var app in _apps.where((a) => a.isActiveSubscription)) {
-      if (app.subscriptionCost == null) continue;
-      final cost = app.billingCycle == 'yearly'
-          ? app.subscriptionCost! / 12
-          : app.subscriptionCost!;
-      spending[app.category] = (spending[app.category] ?? 0) + cost;
-    }
-    return spending;
-  }
-
-  Map<String, int> _getCategoryCounts() {
-    final counts = <String, int>{};
-    for (var app in _apps) {
-      counts[app.category] = (counts[app.category] ?? 0) + 1;
-    }
-    return counts;
-  }
-
-  void _navigateToAddApp() async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => AddAppScreen(categories: _categories),
+    return Scaffold(
+      backgroundColor: AppTokens.screenBg,
+      body: _loading
+          ? const Center(
+              child: CircularProgressIndicator(color: AppTokens.gold),
+            )
+          : SafeArea(
+              child: IndexedStack(
+                index: _tab,
+                children: [
+                  // ── Library Tab ──
+                  Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(22, 10, 22, 6),
+                        child: Row(
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'YOUR LIBRARY',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    color: AppTokens.textFaint,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 1.8,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  active > 0
+                                      ? '$active subscriptions'
+                                      : 'No subscriptions',
+                                  style: GoogleFonts.playfairDisplay(
+                                    color: AppTokens.textStrong,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppTokens.gold.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 4,
+                                    height: 4,
+                                    decoration: const BoxDecoration(
+                                      color: AppTokens.gold,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    'DEVICE LOCAL',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      color: AppTokens.gold,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1.2,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_apps.any((a) => a.isActiveSubscription))
+                        AnimatedBuilder(
+                          animation: _scrollCtrl,
+                          builder: (_, __) {
+                            final offset = _scrollCtrl.hasClients
+                                ? _scrollCtrl.offset.clamp(0.0, double.infinity)
+                                : 0.0;
+                            final t = (offset / 96.0).clamp(0.0, 1.0);
+                            final height = lerpDouble(156.0, 44.0, t)!;
+                            final vertPad = lerpDouble(28.0, 10.0, t)!;
+                            final horizPad = lerpDouble(22.0, 22.0, t)!;
+                            final labelFont = lerpDouble(12.0, 11.0, t)!;
+                            final amountFont = lerpDouble(52.0, 18.0, t)!;
+                            final pillOpacity = (1.0 - t * 2.0).clamp(0.0, 1.0);
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 22,
+                                vertical: 14,
+                              ),
+                              child: GestureDetector(
+                                onTap: () => setState(() => _tab = 1),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 100),
+                                  decoration: BoxDecoration(
+                                    color: AppTokens.cardBg,
+                                    borderRadius: BorderRadius.circular(
+                                      t < 0.5 ? 20.0 : 12.0,
+                                    ),
+                                    border: Border.all(
+                                      color: AppTokens.hairline,
+                                    ),
+                                  ),
+                                  height: height,
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: vertPad,
+                                    horizontal: horizPad,
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: [
+                                      if (t < 0.5)
+                                        Text(
+                                          'Monthly spend',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            color: AppTokens.textMuted,
+                                            fontSize: labelFont,
+                                            fontWeight: FontWeight.w500,
+                                            letterSpacing: 1,
+                                          ),
+                                        )
+                                      else
+                                        Text(
+                                          'Monthly spend',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            color: AppTokens.textMuted,
+                                            fontSize: labelFont,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      AnimatedBuilder(
+                                        animation: _counterAnim,
+                                        builder: (_, __) => ShaderMask(
+                                          shaderCallback: (bounds) =>
+                                              LinearGradient(
+                                                colors: [
+                                                  AppTokens.gold,
+                                                  AppTokens.goldLight,
+                                                ],
+                                              ).createShader(bounds),
+                                          child: Text(
+                                            _fmt.format(
+                                              monthly * _counterAnim.value,
+                                            ),
+                                            style: GoogleFonts.playfairDisplay(
+                                              color: AppTokens.gold,
+                                              fontSize: amountFont,
+                                              fontWeight: FontWeight.w700,
+                                              height: t < 0.5 ? 1.0 : 1.2,
+                                              letterSpacing: t < 0.5
+                                                  ? -1.5
+                                                  : -0.5,
+                                              fontFeatures: const [
+                                                FontFeature.tabularFigures(),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      // Pills fade out (only when partially or fully expanded)
+                      if (_apps.any((a) => a.isActiveSubscription))
+                        AnimatedBuilder(
+                          animation: _scrollCtrl,
+                          builder: (_, __) {
+                            final offset = _scrollCtrl.hasClients
+                                ? _scrollCtrl.offset.clamp(0.0, double.infinity)
+                                : 0.0;
+                            final t = (offset / 96.0).clamp(0.0, 1.0);
+                            final pillOpacity = (1.0 - t * 2.0).clamp(0.0, 1.0);
+                            return AnimatedOpacity(
+                              duration: const Duration(milliseconds: 100),
+                              opacity: pillOpacity,
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  bottom: pillOpacity > 0 ? 4 : 0,
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    _pill('$active active', AppTokens.gold),
+                                    const SizedBox(width: 12),
+                                    if (active > 0)
+                                      _pill(
+                                        '\$${_analytics.getYearlyProjection(_apps).toStringAsFixed(0)}/yr',
+                                        AppTokens.textMuted,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      // D4: Expired promo banner
+                      if (expiredPromos.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 22),
+                          child: Dismissible(
+                            key: ValueKey(expiredPromos.first.id),
+                            onDismissed: (_) =>
+                                _dismissPromoBanner(expiredPromos.first.id),
+                            child: GestureDetector(
+                              onTap: _showExpiredPromoSheet,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppTokens.warning.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: AppTokens.warning.withValues(
+                                      alpha: 0.2,
+                                    ),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.warning_amber_rounded,
+                                      color: AppTokens.warning,
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        '${expiredPromos.length} promo(s) have ended — prices may be outdated',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          color: AppTokens.warning,
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    const Icon(
+                                      Icons.chevron_right_rounded,
+                                      color: AppTokens.warning,
+                                      size: 16,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 22),
+                        child: Row(
+                          children: [
+                            Expanded(child: _searchField()),
+                            const SizedBox(width: 10),
+                            _iconBtn(
+                              Icons.sort_rounded,
+                              onTap: () =>
+                                  setState(() => _sortBy = (_sortBy + 1) % 4),
+                            ),
+                            const SizedBox(width: 8),
+                            _iconBtn(
+                              _grid
+                                  ? Icons.view_agenda_rounded
+                                  : Icons.grid_view_rounded,
+                              onTap: () => setState(() => _grid = !_grid),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        height: 38,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 22),
+                          children: [
+                            _chip('All', _apps.length, null, _cat == null),
+                            for (final c in _cats)
+                              if ((counts[c.name] ?? 0) > 0)
+                                _chip(
+                                  c.name,
+                                  counts[c.name] ?? 0,
+                                  c.color,
+                                  _cat == c.name,
+                                ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: filtered.isEmpty
+                            ? Center(
+                                child: Text(
+                                  _apps.isEmpty
+                                      ? 'No subscriptions yet'
+                                      : 'No matches',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    color: AppTokens.textMuted,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              )
+                            : _grid
+                            ? GridView.builder(
+                                controller: _scrollCtrl,
+                                padding: const EdgeInsets.fromLTRB(
+                                  22,
+                                  0,
+                                  22,
+                                  150,
+                                ),
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 2,
+                                      mainAxisSpacing: 10,
+                                      crossAxisSpacing: 10,
+                                      childAspectRatio: 0.85,
+                                    ),
+                                itemCount: filtered.length,
+                                itemBuilder: (_, i) => _gridCard(filtered[i]),
+                              )
+                            : ListView.builder(
+                                controller: _scrollCtrl,
+                                padding: const EdgeInsets.fromLTRB(
+                                  22,
+                                  0,
+                                  22,
+                                  150,
+                                ),
+                                itemCount: filtered.length,
+                                itemBuilder: (_, i) => _listCard(filtered[i]),
+                              ),
+                      ),
+                    ],
+                  ),
+                  // ── Dashboard Tab ──
+                  _DashboardView(
+                    apps: _apps,
+                    analytics: _analytics,
+                    installed: _installedPkgs,
+                    dismissed: _dismissedInsights,
+                    onDismissInsight: _dismissInsight,
+                    onEdit: _goEdit,
+                    cats: _cats,
+                    onRefresh: _refresh,
+                    cliffExpanded: _cliffExpanded,
+                    onToggleCliff: () =>
+                        setState(() => _cliffExpanded = !_cliffExpanded),
+                    insightsExpanded: _insightsExpanded,
+                    onToggleInsights: () =>
+                        setState(() => _insightsExpanded = !_insightsExpanded),
+                    matchedOffers: _matchedOffers,
+                    offersEnabled: _offersEnabled,
+                  ),
+                  // ── Settings Tab ──
+                  const SettingsScreen(),
+                ],
+              ),
+            ),
+      bottomNavigationBar: GlassBottomNav(
+        selectedIndex: _tab,
+        onTap: (i) {
+          setState(() => _tab = i);
+          if (i == 0) _refresh();
+        },
+        adBanner: (!_ads.adsRemoved && _ads.bannerAd != null)
+            ? SizedBox(
+                height: _ads.bannerAd!.size.height.toDouble(),
+                child: AdWidget(ad: _ads.bannerAd!),
+              )
+            : null,
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _goAdd,
+        backgroundColor: AppTokens.gold,
+        foregroundColor: AppTokens.screenBg,
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: const Icon(Icons.add_rounded, size: 28),
       ),
     );
-    if (result == true) {
-      await _loadData();
-    }
   }
 
-  void _showAppDetails(AppEntry app) async {
-    // Open app URL in browser/app store
-    // For now, just navigate to edit
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => AddAppScreen(categories: _categories),
+  Widget _pill(String text, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Text(
+      text,
+      style: GoogleFonts.plusJakartaSans(
+        color: color,
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
       ),
-    );
-    if (result == true) {
-      await _loadData();
-    }
-  }
-
-  void _navigateToCategories() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => CategoriesScreen(categories: _categories),
+    ),
+  );
+  Widget _searchField() => Container(
+    height: 42,
+    decoration: BoxDecoration(
+      color: AppTokens.fieldBg,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: AppTokens.hairline),
+    ),
+    child: TextField(
+      onChanged: (v) => setState(() => _q = v),
+      decoration: InputDecoration(
+        hintText: 'Search...',
+        hintStyle: TextStyle(color: AppTokens.textPlaceholder, fontSize: 13),
+        prefixIcon: const Icon(
+          Icons.search_rounded,
+          size: 18,
+          color: Color(0xFF6B6B82),
+        ),
+        border: InputBorder.none,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(vertical: 12),
       ),
-    );
-    await _loadData();
-  }
-
-  void _exportData() {
-    // Generate CSV
-    final buffer = StringBuffer();
-    buffer.writeln('Name,Category,Cost,Billing Cycle,Next Renewal,App Store Link,Notes,Is Promo,Regular Price,Promo Ends');
-    
-    for (final app in _apps) {
-      buffer.write('"${app.name}",');
-      buffer.write('"${app.category}",');
-      buffer.write('${app.subscriptionCost ?? '0'},');
-      buffer.write('${app.billingCycle ?? 'N/A'},');
-      buffer.write('${app.nextRenewalDate != null ? '${app.nextRenewalDate!.month}/${app.nextRenewalDate!.day}/${app.nextRenewalDate!.year}' : 'N/A'},');
-      buffer.write('"${app.appStoreLink}",');
-      buffer.write('"${(app.notes ?? '').replaceAll('"', '""')}",');
-      buffer.write('${app.isPromotionalPrice ? 'Yes' : 'No'},');
-      buffer.write('${app.regularPrice ?? '0'},');
-      buffer.writeln('${app.promotionEndsDate != null ? '${app.promotionEndsDate!.month}/${app.promotionEndsDate!.day}/${app.promotionEndsDate!.year}' : 'N/A'}');
-    }
-
-    final csvData = buffer.toString();
-    
-    // Create download link with readable date
-    final now = DateTime.now();
-    final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    
-    // Create blob and download
-    final blob = html.Blob([csvData], 'text/csv;charset=utf-8');
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    (html.document.createElement('a') as html.AnchorElement)
-      ..href = url
-      ..download = 'subscriptions_$dateStr.csv'
-      ..click();
-    
-    html.Url.revokeObjectUrl(url);
-
-    // Show confirmation
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('✓ Exported ${_apps.length} subscriptions to CSV'),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
+      style: GoogleFonts.plusJakartaSans(
+        color: AppTokens.textPrimary,
+        fontSize: 13,
       ),
-    );
-  }
-
-  void _showCategoryFilter() {
-    final categoryCounts = _getCategoryCounts();
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+  );
+  Widget _iconBtn(IconData icon, {VoidCallback? onTap}) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        color: AppTokens.fieldBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTokens.hairline),
       ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+      child: Icon(icon, color: const Color(0xFF9B9BA8), size: 18),
+    ),
+  );
+  Widget _chip(String name, int count, Color? color, bool selected) => Padding(
+    padding: const EdgeInsets.only(right: 8),
+    child: GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() => _cat = selected ? null : name);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected
+              ? AppTokens.gold.withValues(alpha: 0.12)
+              : AppTokens.fieldBg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected
+                ? AppTokens.gold.withValues(alpha: 0.3)
+                : AppTokens.hairline,
+          ),
+        ),
+        child: Row(
           mainAxisSize: MainAxisSize.min,
+          children: [
+            if (color != null)
+              Container(
+                width: 6,
+                height: 6,
+                margin: const EdgeInsets.only(right: 6),
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+            Text(
+              '$name $count',
+              style: GoogleFonts.plusJakartaSans(
+                color: selected ? AppTokens.gold : const Color(0xFF9B9BA8),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _listCard(AppEntry app) {
+    final baseClr = AppTokens.categoryColor(app.category);
+    final days = app.nextRenewalDate != null
+        ? app.nextRenewalDate!.difference(DateTime.now()).inDays
+        : null;
+    final urg = days != null ? AppTokens.urgency(days) : null;
+    return Dismissible(
+      key: ValueKey(app.id),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (_) async {
+        _deleteApp(app);
+        return false;
+      },
+      background: Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        decoration: BoxDecoration(
+          color: AppTokens.danger.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 28),
+        child: const Icon(
+          Icons.delete_outline_rounded,
+          color: AppTokens.danger,
+          size: 20,
+        ),
+      ),
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          _goEdit(app);
+        },
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 16),
+          decoration: const BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: AppTokens.hairline, width: 1),
+            ),
+          ),
+          child: Row(
+            children: [
+              _listAvatar(app: app, baseClr: baseClr),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          app.name,
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppTokens.textPrimary,
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (app.isPromotionalPrice &&
+                            app.promotionEndsDate != null &&
+                            app.promotionEndsDate!
+                                    .difference(DateTime.now())
+                                    .inDays <=
+                                30)
+                          Container(
+                            margin: const EdgeInsets.only(left: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTokens.warning.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'PROMO',
+                              style: GoogleFonts.plusJakartaSans(
+                                color: AppTokens.warning,
+                                fontSize: 8.5,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Container(
+                          width: 5,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: baseClr,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          app.category,
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppTokens.textMuted,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (days != null) ...[
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          Icon(
+                            days <= 7
+                                ? Icons.notifications_active_rounded
+                                : Icons.schedule_rounded,
+                            size: 11,
+                            color: urg?.fg,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Renews in $days day${days == 1 ? '' : 's'}',
+                            style: GoogleFonts.plusJakartaSans(
+                              color: urg?.fg,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (app.subscriptionCost == null ||
+                        app.nextRenewalDate == null) ...[
+                      const SizedBox(height: 4),
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          Navigator.push<bool>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AddAppScreen(
+                                categories: _cats,
+                                appToEdit: app,
+                                focusBilling: true,
+                              ),
+                            ),
+                          ).then((ok) {
+                            if (ok == true) _refresh();
+                          });
+                        },
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              size: 11,
+                              color: AppTokens.gold,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Tap to set billing date',
+                              style: GoogleFonts.plusJakartaSans(
+                                color: AppTokens.gold,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (app.isActiveSubscription)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      _fmt.format(app.subscriptionCost ?? 0),
+                      style: GoogleFonts.spaceGrotesk(
+                        color: AppTokens.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    Text(
+                      '/${app.billingCycle == 'yearly' ? 'yr' : 'mo'}',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: AppTokens.textFaint,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              const SizedBox(width: 6),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: AppTokens.textFaint.withValues(alpha: 0.4),
+                size: 18,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _listAvatar({required AppEntry app, required Color baseClr}) {
+    final iconBytes = AppIconService().iconFor(app.packageName);
+    if (iconBytes != null)
+      return Hero(
+        tag: 'logo-${app.id}',
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.memory(
+            iconBytes,
+            width: 44,
+            height: 44,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+          ),
+        ),
+      );
+    return Hero(
+      tag: 'logo-${app.id}',
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [baseClr, baseClr.withValues(alpha: 0.7)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Center(
+          child: Text(
+            app.name[0].toUpperCase(),
+            style: GoogleFonts.spaceGrotesk(
+              color: Colors.white,
+              fontSize: 19,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _gridCard(AppEntry app) {
+    final baseClr = AppTokens.categoryColor(app.category);
+    return GestureDetector(
+      onTap: () => _goEdit(app),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppTokens.cardBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTokens.hairline),
+        ),
+        padding: const EdgeInsets.all(14),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Filter by Category',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                CircleAvatar(
+                  backgroundColor: baseClr.withValues(alpha: 0.2),
+                  radius: 14,
+                  child: Text(
+                    app.name[0].toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
-                IconButton(
-                  icon: const HugeIcon(icon: HugeIcons.strokeRoundedCancel01, size: 18),
-                  onPressed: () => Navigator.pop(context),
-                ),
+                const Spacer(),
+                if (app.isActiveSubscription)
+                  Text(
+                    '\$${app.subscriptionCost?.toStringAsFixed(0) ?? '0'}',
+                    style: GoogleFonts.spaceGrotesk(
+                      color: AppTokens.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
               ],
             ),
-            const Divider(),
-            const SizedBox(height: 8),
-            ListTile(
-              leading: Icon(Icons.apps_rounded,
-                  color: _selectedCategory == null 
-                      ? Theme.of(context).colorScheme.primary 
-                      : Colors.grey),
-              title: const Text('All'),
-              trailing: Text('${_apps.length}',
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.bold,
-                  )),
-              selected: _selectedCategory == null,
-              selectedTileColor: Theme.of(context).colorScheme.primaryContainer,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            const Spacer(),
+            Text(
+              app.name,
+              style: GoogleFonts.plusJakartaSans(
+                color: AppTokens.textPrimary,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
               ),
-              onTap: () {
-                setState(() => _selectedCategory = null);
-                Navigator.pop(context);
-              },
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 8),
-            Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: _categories.length,
-                itemBuilder: (context, index) {
-                  final cat = _categories[index];
-                  final count = categoryCounts[cat.name] ?? 0;
-                  final isSelected = _selectedCategory == cat.name;
-                  return ListTile(
-                    leading: Icon(
-                      getCategoryIcon(cat.name),
-                      color: isSelected ? Theme.of(context).colorScheme.primary : cat.color,
-                    ),
-                    title: Text(cat.name),
-                    trailing: Text('$count',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.bold,
-                        )),
-                    selected: isSelected,
-                    selectedTileColor: Theme.of(context).colorScheme.primaryContainer,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    onTap: () {
-                      setState(() => _selectedCategory = cat.name);
-                      Navigator.pop(context);
-                    },
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 8),
-            const Text(
-              'Billing Cycle',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                FilterChip(
-                  label: const Text('All'),
-                  selected: _selectedBillingCycle == null,
-                  onSelected: (selected) {
-                    setState(() => _selectedBillingCycle = null);
-                    Navigator.pop(context);
-                  },
-                ),
-                FilterChip(
-                  label: const Text('Monthly'),
-                  avatar: Icon(
-                    Icons.calendar_month_rounded,
-                    size: 16,
-                    color: _selectedBillingCycle == 'monthly' ? Colors.white : null,
-                  ),
-                  selected: _selectedBillingCycle == 'monthly',
-                  onSelected: (selected) {
-                    setState(() => _selectedBillingCycle = selected ? 'monthly' : null);
-                    Navigator.pop(context);
-                  },
-                ),
-                FilterChip(
-                  label: const Text('Yearly'),
-                  avatar: Icon(
-                    Icons.event_rounded,
-                    size: 16,
-                    color: _selectedBillingCycle == 'yearly' ? Colors.white : null,
-                  ),
-                  selected: _selectedBillingCycle == 'yearly',
-                  onSelected: (selected) {
-                    setState(() => _selectedBillingCycle = selected ? 'yearly' : null);
-                    Navigator.pop(context);
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: () {
-                Navigator.pop(context);
-                _navigateToCategories();
-              },
-              icon: const Icon(Icons.settings_rounded, size: 18),
-              label: const Text('Manage Categories'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 48),
+            Text(
+              app.category,
+              style: GoogleFonts.plusJakartaSans(
+                color: AppTokens.textMuted,
+                fontSize: 10.5,
               ),
             ),
           ],
@@ -427,994 +1248,692 @@ class _LibraryScreenState extends State<LibraryScreen> {
       ),
     );
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+
+class _DashboardView extends StatelessWidget {
+  final List<AppEntry> apps;
+  final AnalyticsService analytics;
+  final Set<String> installed;
+  final Map<String, int> dismissed;
+  final void Function(String) onDismissInsight;
+  final void Function(AppEntry) onEdit;
+  final List<Category> cats;
+  final VoidCallback onRefresh;
+  final bool cliffExpanded;
+  final VoidCallback onToggleCliff;
+  final bool insightsExpanded;
+  final VoidCallback onToggleInsights;
+  final List<MatchedOffer> matchedOffers;
+  final bool offersEnabled;
+
+  const _DashboardView({
+    required this.apps,
+    required this.analytics,
+    required this.installed,
+    required this.dismissed,
+    required this.onDismissInsight,
+    required this.onEdit,
+    required this.cats,
+    required this.onRefresh,
+    required this.cliffExpanded,
+    required this.onToggleCliff,
+    required this.insightsExpanded,
+    required this.onToggleInsights,
+    required this.matchedOffers,
+    required this.offersEnabled,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'App Library Ledger',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        elevation: 0,
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Theme.of(context).colorScheme.primary,
-                Theme.of(context).colorScheme.primary.withOpacity(0.8),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
-        actions: [
-          if (_apps.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.file_download_outlined),
-              onPressed: _exportData,
-              tooltip: 'Export data',
-            ),
-          IconButton(
-            icon: Icon(
-              widget.themeMode == ThemeMode.dark 
-                  ? Icons.light_mode_rounded 
-                  : Icons.dark_mode_rounded,
-            ),
-            onPressed: widget.onToggleTheme,
-            tooltip: 'Toggle theme',
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Tab selector
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
+    final monthly = analytics.getTotalMonthlyCost(apps);
+    final active = analytics.getActiveSubscriptionCount(apps);
+    final avg = active > 0 ? monthly / active : 0.0;
+    final yearly = analytics.getYearlyProjection(apps);
+    final insights = analytics.generateInsights(
+      apps,
+      installed: installed,
+      dismissed: dismissed,
+    );
+    final healthInsight = insights
+        .where((i) => i.id == 'health_score')
+        .toList();
+    final otherInsights = insights
+        .where((i) => i.id != 'health_score')
+        .toList();
+    final cliff = analytics.getPromoCliff(apps);
+    final coming = analytics.getComingUp(apps);
+    final savings = analytics.getActivePromoSavings(apps);
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(22, 12, 22, 150),
+      children: [
+        Row(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'DASHBOARD',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppTokens.textFaint,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.8,
+                  ),
+                ),
+                Text(
+                  'Overview',
+                  style: GoogleFonts.playfairDisplay(
+                    color: AppTokens.textStrong,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ],
             ),
-            child: SegmentedButton<int>(
-              style: SegmentedButton.styleFrom(
-                selectedBackgroundColor: Theme.of(context).colorScheme.primary,
-                selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppTokens.gold.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
               ),
-              segments: const [
-                ButtonSegment(
-                  value: 0,
-                  label: Text('Library'),
-                  icon: Icon(Icons.apps_rounded),
-                ),
-                ButtonSegment(
-                  value: 1,
-                  label: Text('Dashboard'),
-                  icon: Icon(Icons.dashboard_rounded),
-                ),
-              ],
-              selected: {_selectedTabIndex},
-              onSelectionChanged: (Set<int> newSelection) {
-                setState(() {
-                  _selectedTabIndex = newSelection.first;
-                });
-              },
-            ),
-          ),
-          if (_selectedTabIndex == 0) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
-              child: TextField(
-                onChanged: (value) {
-                  setState(() => _searchQuery = value);
-                },
-                decoration: InputDecoration(
-                  hintText: 'Search your apps...',
-                  hintStyle: TextStyle(color: Colors.grey[400]),
-                  prefixIcon: const HugeIcon(icon: HugeIcons.strokeRoundedSearch01, size: 18),
-                  suffixIcon: _searchQuery.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear_rounded),
-                          onPressed: () => setState(() => _searchQuery = ''),
-                        )
-                      : null,
-                ),
-              ),
-            ),
-            // Sort and Filter controls
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Flexible(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.sort_rounded, 
-                            size: 18, 
-                            color: Theme.of(context).colorScheme.primary),
-                        const SizedBox(width: 6),
-                        const Text('Sort:', 
-                            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.surfaceVariant,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: DropdownButton<String>(
-                              value: _sortBy,
-                              underline: const SizedBox(),
-                              isDense: true,
-                              onChanged: (value) {
-                                if (value != null) {
-                                  setState(() => _sortBy = value);
-                                }
-                              },
-                              items: [
-                                DropdownMenuItem(
-                                    value: 'name', 
-                                    child: Row(
-                                      children: [
-                                        if (_sortBy == 'name')
-                                          Icon(Icons.check, size: 16, color: Theme.of(context).colorScheme.primary),
-                                        if (_sortBy == 'name')
-                                          const SizedBox(width: 4),
-                                        const Text('Name', style: TextStyle(fontSize: 13)),
-                                      ],
-                                    )),
-                                DropdownMenuItem(
-                                    value: 'price', 
-                                    child: Row(
-                                      children: [
-                                        if (_sortBy == 'price')
-                                          Icon(Icons.check, size: 16, color: Theme.of(context).colorScheme.primary),
-                                        if (_sortBy == 'price')
-                                          const SizedBox(width: 4),
-                                        const Text('Price', style: TextStyle(fontSize: 13)),
-                                      ],
-                                    )),
-                                DropdownMenuItem(
-                                value: 'renewal', 
-                                child: Row(
-                                  children: [
-                                    if (_sortBy == 'renewal')
-                                      Icon(Icons.check, size: 16, color: Theme.of(context).colorScheme.primary),
-                                    if (_sortBy == 'renewal')
-                                      const SizedBox(width: 4),
-                                    const Text('Renewal', style: TextStyle(fontSize: 13)),
-                                  ],
-                                )),
-                            DropdownMenuItem(
-                                value: 'recent', 
-                                child: Row(
-                                  children: [
-                                    if (_sortBy == 'recent')
-                                      Icon(Icons.check, size: 16, color: Theme.of(context).colorScheme.primary),
-                                    if (_sortBy == 'recent')
-                                      const SizedBox(width: 4),
-                                    const Text('Recent', style: TextStyle(fontSize: 13)),
-                                  ],
-                                )),
-                          ],
-                            ),
-                          ),
-                        ),
-                      ],
+                  Container(
+                    width: 4,
+                    height: 4,
+                    decoration: const BoxDecoration(
+                      color: AppTokens.gold,
+                      shape: BoxShape.circle,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeInOut,
-                    child: OutlinedButton.icon(
-                      onPressed: _showCategoryFilter,
-                      icon: const HugeIcon(icon: HugeIcons.strokeRoundedFilterHorizontal, size: 14),
-                      label: Text(
-                        _selectedCategory ?? 
-                        (_selectedBillingCycle != null 
-                          ? _selectedBillingCycle == 'monthly' ? 'Monthly' : 'Yearly'
-                          : 'Filter'),
-                        style: const TextStyle(fontSize: 13),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        backgroundColor: (_selectedCategory != null || _selectedBillingCycle != null)
-                            ? Theme.of(context).colorScheme.primaryContainer 
-                            : null,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
+                  const SizedBox(width: 5),
+                  Text(
+                    'DEVICE LOCAL',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: AppTokens.gold,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
                     ),
                   ),
                 ],
               ),
             ),
           ],
-          // Search and Filter Section
-          if (_selectedTabIndex == 0) ...[
-            // Promotional Price Alert
-            if (_apps.any((app) => app.isPromotionalPrice && 
-                app.promotionEndsDate != null && 
-                app.promotionEndsDate!.difference(DateTime.now()).inDays <= 30)) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: Card(
-                  elevation: 0,
-                  color: Colors.orange[50],
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Icon(Icons.warning_amber, color: Colors.orange[700], size: 32),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Price Increase Alert',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                  color: Colors.orange[900],
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${_apps.where((app) => app.isPromotionalPrice && app.promotionEndsDate != null && app.promotionEndsDate!.difference(DateTime.now()).inDays <= 30).length} subscription(s) ending promo soon',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.orange[700],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-            if (_apps.any((app) => app.isActiveSubscription)) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                child: Card(
-                  color: Colors.blue[50],
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.blue[700],
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.credit_card_rounded,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Monthly Subscriptions',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                                Text(
-                                  '\$${_getTotalMonthlyCost().toStringAsFixed(2)}/month',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blue[900],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                        FilterChip(
-                          label: Text(_showSubscriptionsOnly ? 'Show All' : 'Subs Only'),
-                          selected: _showSubscriptionsOnly,
-                          onSelected: (value) {
-                            setState(() => _showSubscriptionsOnly = value);
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 8),
-            Expanded(
-              child: _getFilteredApps().isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        TweenAnimationBuilder<double>(
-                          duration: const Duration(milliseconds: 2000),
-                          tween: Tween(begin: 0.95, end: 1.05),
-                          curve: Curves.easeInOut,
-                          builder: (context, value, child) {
-                            return Transform.scale(
-                              scale: value,
-                              child: child,
-                            );
-                          },
-                          onEnd: () {
-                            // Restart animation by rebuilding
-                            if (mounted) setState(() {});
-                          },
-                          child: Container(
-                          padding: const EdgeInsets.all(40),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4),
-                                Theme.of(context).colorScheme.primaryContainer.withOpacity(0.2),
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                                blurRadius: 20,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: HugeIcon(
-                            icon: _apps.isEmpty ? HugeIcons.strokeRoundedMenu03 : HugeIcons.strokeRoundedSearchRemove,
-                            size: 72,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                        ),
-                        const SizedBox(height: 32),
-                        Text(
-                          _apps.isEmpty
-                              ? 'No Apps Yet'
-                              : 'No Results Found',
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _apps.isEmpty
-                              ? 'Start tracking your subscriptions\nby adding your first app'
-                              : 'Try adjusting your search or filters',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                        if (_apps.isEmpty) ...[
-                          const SizedBox(height: 24),
-                          FilledButton.icon(
-                            onPressed: _navigateToAddApp,
-                            icon: const HugeIcon(icon: HugeIcons.strokeRoundedAdd01, size: 18),
-                            label: const Text('Add Your First App'),
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 32,
-                                vertical: 16,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: _getFilteredApps().length,
-                    itemBuilder: (context, index) {
-                      final app = _getFilteredApps()[index];
-                      final category = _categories.firstWhere(
-                        (c) => c.name == app.category,
-                        orElse: () => Category(
-                          name: app.category,
-                          color: Colors.grey,
-                        ),
-                      );
+        ),
+        const SizedBox(height: 16),
 
-                      return TweenAnimationBuilder<double>(
-                        duration: Duration(milliseconds: 300 + (index * 50)),
-                        tween: Tween(begin: 0.0, end: 1.0),
-                        curve: Curves.easeOutCubic,
-                        builder: (context, value, child) {
-                          return Transform.translate(
-                            offset: Offset(0, 20 * (1 - value)),
-                            child: Opacity(
-                              opacity: value,
-                              child: child,
-                            ),
-                          );
-                        },
-                        child: Hero(
-                          tag: 'app-${app.id}',
-                          child: Material(
-                            color: Colors.transparent,
-                            child: GlassmorphicContainer(
-                              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              padding: const EdgeInsets.all(20),
-                              blur: 15,
-                              opacity: 0.08,
-                              borderRadius: BorderRadius.circular(24),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Theme.of(context).brightness == Brightness.dark
-                                      ? Colors.black.withOpacity(0.3)
-                                      : category.color.withOpacity(0.1),
-                                  blurRadius: 20,
-                                  offset: const Offset(0, 8),
-                                  spreadRadius: 2,
-                                ),
-                              ],
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(24),
-                                onTap: () => _showAppDetails(app),
-                                child: Row(
-                                  children: [
-                                    getAppLogo(app.name, category.color),
-                                    const SizedBox(width: 20),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            app.name,
-                                            style: const TextStyle(
-                                              fontSize: 17,
-                                              fontWeight: FontWeight.w600,
-                                              letterSpacing: -0.3,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Text(
-                                            app.category,
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: Colors.grey[600],
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      if (app.isPromotionalPrice && app.promotionEndsDate != null) ...[
-                                        const SizedBox(height: 8),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: app.promotionEndsDate!.difference(DateTime.now()).inDays <= 30
-                                                ? Colors.orange[100]
-                                                : Colors.blue[50],
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: Text(
-                                            app.promotionEndsDate!.difference(DateTime.now()).inDays <= 30
-                                                ? '⚠️ Price increases in ${app.promotionEndsDate!.difference(DateTime.now()).inDays} days'
-                                                : 'Promo ends ${app.promotionEndsDate!.month}/${app.promotionEndsDate!.day}',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w500,
-                                              color: app.promotionEndsDate!.difference(DateTime.now()).inDays <= 30
-                                                  ? Colors.orange[900]
-                                                  : Colors.blue[900],
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                      if (app.isActiveSubscription && app.nextRenewalDate != null) ...[
-                                        const SizedBox(height: 6),
-                                        Row(
-                                          children: [
-                                            Icon(Icons.event_rounded, 
-                                                size: 14, 
-                                                color: Colors.grey[500]),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              'Renews: ${app.nextRenewalDate!.month}/${app.nextRenewalDate!.day}/${app.nextRenewalDate!.year}',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey[600],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    if (app.isActiveSubscription) ...[
-                                      if (app.isPromotionalPrice && app.promotionEndsDate != null) ...[
-                                        Text(
-                                          '\$${app.subscriptionCost?.toStringAsFixed(2) ?? '0.00'}',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.grey[600],
-                                            decoration: TextDecoration.lineThrough,
-                                          ),
-                                        ),
-                                        Icon(Icons.arrow_downward_rounded, 
-                                            size: 12, 
-                                            color: Colors.grey[600]),
-                                        Text(
-                                          '\$${app.regularPrice?.toStringAsFixed(2) ?? '0.00'}',
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            color: app.promotionEndsDate!.difference(DateTime.now()).inDays <= 30
-                                                ? Colors.orange[700]
-                                                : Theme.of(context).colorScheme.primary,
-                                          ),
-                                        ),
-                                      ] else ...[
-                                        Text(
-                                          '\$${app.subscriptionCost?.toStringAsFixed(2) ?? '0.00'}',
-                                          style: const TextStyle(
-                                            fontSize: 20,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        Text(
-                                          '/${app.billingCycle == 'yearly' ? 'year' : 'month'}',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[600],
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        IconButton(
-                                          icon: const HugeIcon(icon: HugeIcons.strokeRoundedEdit02, size: 16),
-                                          tooltip: 'Edit',
-                                          onPressed: () async {
-                                            final result = await Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (context) => AddAppScreen(
-                                                  categories: _categories,
-                                                  appToEdit: app,
-                                                ),
-                                              ),
-                                            );
-                                            if (result == true) {
-                                              await _loadData();
-                                            }
-                                          },
-                                        ),
-                                        IconButton(
-                                          icon: const HugeIcon(icon: HugeIcons.strokeRoundedDelete02, size: 16),
-                                          tooltip: 'Delete',
-                                          onPressed: () async {
-                                        final confirm = await showDialog<bool>(
-                                          context: context,
-                                          builder: (context) => AlertDialog(
-                                            title: const Text('Delete app?'),
-                                            content: Text(
-                                                'Remove "${app.name}" from your library?'),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () =>
-                                                    Navigator.pop(context, false),
-                                                child: const Text('Cancel'),
-                                              ),
-                                              FilledButton(
-                                                onPressed: () =>
-                                                    Navigator.pop(context, true),
-                                                child: const Text('Delete'),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                        if (confirm == true) {
-                                          await StorageService().deleteApp(app.id);
-                                          await _loadData();
-                                        }
-                                      },
-                                    ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
+        // D1: Price-cliff alert card
+        if (cliff.isNotEmpty) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTokens.gold.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTokens.gold.withValues(alpha: 0.2)),
+            ),
+            child: Column(
+              children: [
+                GestureDetector(
+                  onTap: onToggleCliff,
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.trending_up_rounded,
+                        color: AppTokens.gold,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '${cliff.length} promo(s) ending soon — spend rises ${_fmt.format(analytics.getPromoCliffTotal(apps))}/mo',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppTokens.gold,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
-                    ), // Hero + GlassmorphicContainer
-                  ); // TweenAnimationBuilder
-                  },
+                      Icon(
+                        cliffExpanded
+                            ? Icons.expand_less_rounded
+                            : Icons.expand_more_rounded,
+                        color: AppTokens.textMuted,
+                        size: 18,
+                      ),
+                    ],
+                  ),
                 ),
-            ),
-          ],
-          // Dashboard Tab
-          if (_selectedTabIndex == 1) ...[
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Stats Cards
-                    TweenAnimationBuilder<double>(
-                      duration: const Duration(milliseconds: 600),
-                      tween: Tween(begin: 0.0, end: 1.0),
-                      curve: Curves.easeOutCubic,
-                      builder: (context, value, child) {
-                        return Transform.translate(
-                          offset: Offset(0, 20 * (1 - value)),
-                          child: Opacity(
-                            opacity: value,
-                            child: child,
-                          ),
-                        );
+                if (cliffExpanded) ...[
+                  const SizedBox(height: 10),
+                  ...cliff.map(
+                    (c) => GestureDetector(
+                      onTap: () {
+                        onEdit(c.app);
                       },
-                      child: Column(
-                        children: [
-                      Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Theme.of(context).colorScheme.primary,
-                                  Theme.of(context).colorScheme.primary.withOpacity(0.7),
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            padding: const EdgeInsets.all(20),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(Icons.calendar_month_rounded,
-                                        size: 20, color: Colors.white.withOpacity(0.9)),
-                                    const SizedBox(width: 6),
-                                    Text('Monthly Total',
-                                        style: TextStyle(
-                                          color: Colors.white.withOpacity(0.9),
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w500,
-                                        )),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  '\$${_getTotalMonthlyCost().toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 28, 
-                                      fontWeight: FontWeight.bold),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.purple.shade400,
-                                  Colors.purple.shade300,
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.purple.withOpacity(0.3),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            padding: const EdgeInsets.all(20),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(Icons.calculate_rounded,
-                                        size: 20, color: Colors.white.withOpacity(0.9)),
-                                    const SizedBox(width: 6),
-                                    Text('Average/App',
-                                        style: TextStyle(
-                                          color: Colors.white.withOpacity(0.9),
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w500,
-                                        )),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  '\$${_getAverageCost().toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 28, 
-                                      fontWeight: FontWeight.bold),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    if (_getMostExpensive() != null)
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.amber.shade400,
-                              Colors.orange.shade300,
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.orange.withOpacity(0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        padding: const EdgeInsets.all(20),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
                         child: Row(
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.2),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.star_rounded,
-                                  size: 24, color: Colors.white),
-                            ),
-                            const SizedBox(width: 16),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Most Expensive',
-                                      style: TextStyle(
-                                        color: Colors.white.withOpacity(0.9),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                      )),
-                                  const SizedBox(height: 4),
                                   Text(
-                                    _getMostExpensive()!.name,
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 20, 
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '\$${_getMostExpensive()!.subscriptionCost?.toStringAsFixed(2) ?? '0.00'}/${_getMostExpensive()!.billingCycle == 'yearly' ? 'year' : 'month'}',
-                                    style: TextStyle(
-                                      color: Colors.white.withOpacity(0.9),
-                                      fontSize: 14,
+                                    c.app.name,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      color: AppTokens.textPrimary,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
+                                  Text(
+                                    'Ends ${_dateFmt.format(c.app.promotionEndsDate!)}',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      color: AppTokens.textMuted,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              '${_fmt.format(c.oldCost)} → ${_fmt.format(c.newCost)}',
+                              style: GoogleFonts.spaceGrotesk(
+                                color: AppTokens.warning,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
                                 ],
                               ),
                             ),
                           ],
                         ),
                       ),
-                        ], // End Column children for metrics
-                      ), // End Column for metrics
-                    ), // End TweenAnimationBuilder for metrics
-                    const SizedBox(height: 24),
-                    // Chart Section with animation
-                    TweenAnimationBuilder<double>(
-                      duration: const Duration(milliseconds: 700),
-                      tween: Tween(begin: 0.0, end: 1.0),
-                      curve: Curves.easeOutCubic,
-                      builder: (context, value, child) {
-                        return Transform.translate(
-                          offset: Offset(0, 30 * (1 - value)),
-                          child: Opacity(
-                            opacity: value,
-                            child: child,
-                          ),
-                        );
-                      },
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                    Row(
-                      children: [
-                        Icon(Icons.donut_small_rounded,
-                            color: Theme.of(context).colorScheme.primary,
-                            size: 20),
-                        const SizedBox(width: 8),
-                        const Text('Spending by Category',
-                            style: TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.bold)),
-                      ],
                     ),
-                    const SizedBox(height: 16),
-                    if (_getSpendingByCategory().isNotEmpty) ...[
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: SizedBox(
-                          height: 250,
-                          child: PieChart(
-                            PieChartData(
-                              sections: _getSpendingByCategory()
-                                  .entries
-                                  .toList()
-                                  .asMap()
-                                  .entries
-                                  .map((e) {
-                                final category = e.value.key;
-                                final amount = e.value.value;
-                                final categoryObj = _categories.firstWhere(
-                                  (c) => c.name == category,
-                                  orElse: () => Category(
-                                    name: category,
-                                    color: Colors.grey,
-                                  ),
-                                );
-                                return PieChartSectionData(
-                                  color: categoryObj.color,
-                                  value: amount,
-                                  title: '\$${amount.toStringAsFixed(0)}',
-                                  radius: 100,
-                                  titleStyle: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                );
-                              }).toList(),
-                              centerSpaceRadius: 50,
-                              sectionsSpace: 2,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+
+        // D2: Coming-up timeline
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppTokens.cardBg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppTokens.hairline),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Coming Up (30 days)',
+                style: GoogleFonts.plusJakartaSans(
+                  color: AppTokens.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (coming.isEmpty)
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      color: AppTokens.success,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Nothing due in the next 30 days',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: AppTokens.success,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                )
+              else ...[
+                ...coming.take(cliffExpanded ? coming.length : 8).map((e) {
+                  final d = e['date'] as DateTime;
+                  final days = d.difference(DateTime.now()).inDays;
+                  final urg = AppTokens.urgency(days);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: GestureDetector(
+                      onTap: () {
+                        final entry = apps
+                            .where((a) => a.id == e['entryId'])
+                            .firstOrNull;
+                        if (entry != null) onEdit(entry);
+                      },
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 42,
+                            child: Text(
+                              _dateFmt.format(d),
+                              style: GoogleFonts.spaceGrotesk(
+                                color: AppTokens.textMuted,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      ..._getSpendingByCategory().entries.map((e) => Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 12,
-                                  height: 12,
-                                  decoration: BoxDecoration(
-                                    color: _categories
-                                        .firstWhere(
-                                          (c) => c.name == e.key,
-                                          orElse: () => Category(
-                                            name: e.key,
-                                            color: Colors.grey,
-                                          ),
-                                        )
-                                        .color,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(child: Text(e.key)),
-                                Text(
-                                  '\$${e.value.toStringAsFixed(2)}/mo',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold),
-                                ),
+                          Container(
+                            width: 6,
+                            height: 6,
+                            margin: const EdgeInsets.only(right: 8),
+                            decoration: BoxDecoration(
+                              color: urg?.fg ?? AppTokens.textMuted,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              '${e['name']} · ${e['label']}',
+                              style: GoogleFonts.plusJakartaSans(
+                                color: AppTokens.textPrimary,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            _fmt.format(e['amount'] as double),
+                            style: GoogleFonts.spaceGrotesk(
+                              color: urg?.fg ?? AppTokens.textMuted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
                               ],
                             ),
-                          )),
-                    ] else
-                      Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Column(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(24),
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.pie_chart_outline_rounded,
-                                  size: 48,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Text('No subscription data yet',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.grey[600],
-                                  )),
-                            ],
                           ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+                if (coming.length > 8 && !cliffExpanded)
+                  GestureDetector(
+                    onTap: onToggleCliff,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        '+${coming.length - 8} more',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTokens.brandEnd,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ],
-                  ), // End Column for chart section
-                  ), // End TweenAnimationBuilder for chart
-                  ],
+                    ),
+                  ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // D3: Savings tally
+        if (savings > 0) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppTokens.success.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppTokens.success.withValues(alpha: 0.15),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.savings_rounded,
+                  color: AppTokens.success,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Saving ${_fmt.format(savings)}/mo across ${analytics.getActivePromoCount(apps)} promo(s)',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppTokens.success,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+
+        // 4 metric cards
+        GridView(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.35,
+          ),
+          children: [
+            _metric(
+              'Monthly Total',
+              _fmt.format(monthly),
+              'This month',
+              Icons.payments_rounded,
+              AppTokens.brandEnd,
+            ),
+            _metric(
+              'Avg / App',
+              _fmt.format(avg),
+              'Per subscription',
+              Icons.tag_rounded,
+              const Color(0xFF06B6D4),
+            ),
+            _metric(
+              'Active Subs',
+              '$active',
+              'Subscriptions',
+              Icons.apps_rounded,
+              AppTokens.success,
+            ),
+            _metric(
+              'Yearly Proj.',
+              _fmt.format(yearly),
+              'Projected / yr',
+              Icons.calendar_month_rounded,
+              AppTokens.warning,
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+
+        // Insights
+        if (insights.isNotEmpty) ...[
+          Text(
+            'Smart Insights',
+            style: GoogleFonts.plusJakartaSans(
+              color: AppTokens.textPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...otherInsights
+              .take(3)
+              .map(
+                (ins) => _insightCard(
+                  ins,
+                  onDismiss: onDismissInsight,
+                  onTap: ins.entryId != null
+                      ? () {
+                          final entry = apps
+                              .where((a) => a.id == ins.entryId)
+                              .firstOrNull;
+                          if (entry != null) onEdit(entry);
+                        }
+                      : null,
+                ),
+              ),
+          if (otherInsights.length > 3 && !insightsExpanded)
+            GestureDetector(
+              onTap: onToggleInsights,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 8),
+                child: Text(
+                  'Show all (${otherInsights.length})',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppTokens.brandEnd,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
-          ],
+          if (insightsExpanded)
+            ...otherInsights
+                .skip(3)
+                .map(
+                  (ins) => _insightCard(
+                    ins,
+                    onDismiss: onDismissInsight,
+                    onTap: ins.entryId != null
+                        ? () {
+                            final entry = apps
+                                .where((a) => a.id == ins.entryId)
+                                .firstOrNull;
+                            if (entry != null) onEdit(entry);
+                          }
+                        : null,
+                  ),
+                ),
+          const SizedBox(height: 10),
+          ...healthInsight.map(
+            (ins) => _insightCard(
+              ins,
+              onDismiss: onDismissInsight,
+              showFactors: true,
+            ),
+          ),
         ],
-      ),
-      floatingActionButton: TweenAnimationBuilder<double>(
-        duration: const Duration(milliseconds: 500),
-        tween: Tween(begin: 0.0, end: 1.0),
-        curve: Curves.elasticOut,
-        builder: (context, value, child) {
-          return Transform.scale(
-            scale: value,
-            child: child,
-          );
-        },
-        child: FloatingActionButton.extended(
-          onPressed: _navigateToAddApp,
-          icon: const HugeIcon(icon: HugeIcons.strokeRoundedAdd01, size: 20),
-          label: const Text('Add App'),
-          elevation: 4,
+
+        // O5: Savings Offers dashboard entry
+        if (offersEnabled && matchedOffers.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => OffersScreen(matches: matchedOffers),
+              ),
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppTokens.brandEnd.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: AppTokens.brandEnd.withValues(alpha: 0.15),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Text('💡', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '${matchedOffers.length} ways to save — up to ${_fmt.format(matchedOffers.first.savingsOverPromo)} over the promo period',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: AppTokens.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppTokens.textMuted,
+                    size: 18,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _metric(String t, String v, String l, IconData i, Color a) =>
+      Container(
+        decoration: BoxDecoration(
+          color: AppTokens.cardBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTokens.hairline),
+        ),
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: a.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(i, color: a, size: 16),
+            ),
+            const Spacer(),
+            Text(
+              v,
+              style: GoogleFonts.spaceGrotesk(
+                color: AppTokens.textPrimary,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              l,
+              style: GoogleFonts.plusJakartaSans(
+                color: AppTokens.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _insightCard(
+    SubscriptionInsight ins, {
+    required void Function(String) onDismiss,
+    VoidCallback? onTap,
+    bool showFactors = false,
+  }) {
+    Color bg;
+    Color fg;
+    switch (ins.type) {
+      case InsightType.danger:
+        bg = AppTokens.danger.withValues(alpha: 0.08);
+        fg = AppTokens.danger;
+      case InsightType.success:
+        bg = AppTokens.success.withValues(alpha: 0.08);
+        fg = AppTokens.success;
+      case InsightType.warning:
+        bg = AppTokens.warning.withValues(alpha: 0.08);
+        fg = AppTokens.warning;
+      case InsightType.info:
+        bg = AppTokens.brandEnd.withValues(alpha: 0.06);
+        fg = AppTokens.brandEnd;
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: fg.withValues(alpha: 0.15)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: fg.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  ins.type == InsightType.success
+                      ? Icons.check_circle_rounded
+                      : ins.type == InsightType.danger
+                      ? Icons.error_rounded
+                      : ins.type == InsightType.warning
+                      ? Icons.warning_amber_rounded
+                      : Icons.info_rounded,
+                  size: 16,
+                  color: fg,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      ins.title,
+                      style: GoogleFonts.plusJakartaSans(
+                        color: AppTokens.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      ins.message,
+                      style: GoogleFonts.plusJakartaSans(
+                        color: AppTokens.textMuted,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                    if (showFactors && ins.id == 'health_score') ...[
+                      const SizedBox(height: 8),
+                      ...ins.message
+                          .split('\n')
+                          .map(
+                            (line) => Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text(
+                                line,
+                                style: GoogleFonts.plusJakartaSans(
+                                  color: AppTokens.textMuted,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ),
+                    ],
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: () => onDismiss(ins.id),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: 16,
+                    color: AppTokens.textFaint,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

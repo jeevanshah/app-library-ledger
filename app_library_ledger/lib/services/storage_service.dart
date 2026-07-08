@@ -59,6 +59,24 @@ class StorageService {
     await _saveCategories(categories);
   }
 
+  Future<void> renameCategory(String oldName, Category updated) async {
+    final categories = await getCategories();
+    final index = categories.indexWhere((c) => c.name == oldName);
+    if (index >= 0) {
+      categories[index] = updated;
+      await _saveCategories(categories);
+    }
+  }
+
+  Future<int> appCountForCategory(String name) async {
+    final apps = await getApps();
+    return apps.where((a) => a.category == name).length;
+  }
+
+  Future<void> saveCategoryOrder(List<Category> ordered) async {
+    await _saveCategories(ordered);
+  }
+
   Future<void> deleteCategory(String name) async {
     final categories = await getCategories();
     categories.removeWhere((c) => c.name == name);
