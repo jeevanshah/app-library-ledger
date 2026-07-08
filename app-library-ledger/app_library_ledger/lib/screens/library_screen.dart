@@ -808,7 +808,10 @@ class _LibraryScreenState extends State<LibraryScreen>
             ),
       bottomNavigationBar: GlassBottomNav(
         selectedIndex: _tab,
-        onTap: (i) => setState(() => _tab = i),
+        onTap: (i) {
+          setState(() => _tab = i);
+          if (i == 0) _refresh();
+        },
         adBanner: (!_ads.adsRemoved && _ads.bannerAd != null)
             ? SizedBox(
                 height: _ads.bannerAd!.size.height.toDouble(),

@@ -11,7 +11,7 @@ class OffersService {
   OffersService._internal();
 
   static const String offersUrl =
-      'https://REPLACE-ME.github.io/offers/offers.json';
+      'https://raw.githubusercontent.com/jeevanshah/app-library-ledger/main/offers.json';
   static const _cacheKey = 'offers_cache';
   static const _timeKey = 'offers_cache_time';
 
