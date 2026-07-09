@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class NotificationSettings {
@@ -58,7 +59,23 @@ class SettingsService {
   SettingsService._internal();
 
   static const _key = 'notification_settings';
+  static const _offersKey = 'offers_enabled';
   NotificationSettings? _cached;
+
+  /// Single reactive source of truth for offers enabled state.
+  /// All screens must read/write through this notifier.
+  final ValueNotifier<bool> offersEnabled = ValueNotifier<bool>(false);
+
+  Future<void> initOffersEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    offersEnabled.value = prefs.getBool(_offersKey) ?? false;
+  }
+
+  Future<void> setOffersEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_offersKey, value);
+    offersEnabled.value = value;
+  }
 
   Future<NotificationSettings> load() async {
     if (_cached != null) return _cached!;

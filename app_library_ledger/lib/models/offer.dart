@@ -10,6 +10,12 @@ class SavingsOffer {
   final DateTime validUntil;
   final String url;
   final double? minCurrentSpend;
+  final String? speedTier;
+  final DateTime? postedAt;
+  final String? serviceType; // "nbn", "mobile", or null
+  final String? tier;        // e.g. "50", "25/10", "Unlimited"
+  final num? dataGB;         // mobile data allowance
+  final String? techType;    // e.g. "FTTP", "5G"
 
   const SavingsOffer({
     required this.id,
@@ -23,7 +29,23 @@ class SavingsOffer {
     required this.validUntil,
     required this.url,
     this.minCurrentSpend,
+    this.speedTier,
+    this.postedAt,
+    this.serviceType,
+    this.tier,
+    this.dataGB,
+    this.techType,
   });
+
+  /// Average monthly cost over 12 months: (promoMonths * promoPrice +
+  /// (12 - promoMonths) * regularPrice) / 12, where promoMonths is
+  /// clamped to 0..12.
+  double get avgFirstYear {
+    final pm = promoMonths.clamp(0, 12);
+    final promoTotal = pm * promoPrice;
+    final ongoing = (12 - pm) * regularPrice;
+    return (promoTotal + ongoing) / 12;
+  }
 
   factory SavingsOffer.fromJson(Map<String, dynamic> json) {
     final validUntil = DateTime.tryParse(json['validUntil'] as String? ?? '');
@@ -60,6 +82,12 @@ class SavingsOffer {
       validUntil: validUntil,
       url: json['url'] as String? ?? '',
       minCurrentSpend: (json['minCurrentSpend'] as num?)?.toDouble(),
+      speedTier: json['speedTier'] as String?,
+      postedAt: DateTime.tryParse(json['postedAt'] as String? ?? ''),
+      serviceType: json['serviceType'] as String?,
+      tier: json['tier'] as String?,
+      dataGB: json['dataGB'] as num?,
+      techType: json['techType'] as String?,
     );
   }
 }

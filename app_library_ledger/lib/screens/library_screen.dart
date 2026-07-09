@@ -15,6 +15,7 @@ import '../services/analytics_service.dart';
 import '../services/app_icon_service.dart';
 import '../services/catalog_service.dart';
 import '../services/subscription_scanner.dart';
+import '../models/offer.dart';
 import '../services/offers_service.dart';
 import '../services/offers_matcher.dart';
 import '../theme/app_tokens.dart';
@@ -50,6 +51,19 @@ class _LibraryScreenState extends State<LibraryScreen>
   Set<String> _dismissedPromoResolve = {};
   List<MatchedOffer> _matchedOffers = [];
   bool _offersEnabled = false;
+  Set<String> _seenOfferIds = {};
+
+  /// Marks all currently matched offers as seen and persists the set,
+  /// clearing the gold dot on the Offers nav icon. Called when the
+  /// Offers tab is opened.
+  Future<void> _markOffersSeen() async {
+    final ids = _matchedOffers.map((m) => m.offer.id).toSet();
+    if (ids.difference(_seenOfferIds).isEmpty) return;
+    setState(() => _seenOfferIds = {..._seenOfferIds, ...ids});
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('seen_offer_ids', _seenOfferIds.toList());
+  }
+  List<SavingsOffer> _allOffers = [];
 
   final _analytics = AnalyticsService();
   final _ads = AdService();
@@ -136,6 +150,7 @@ class _LibraryScreenState extends State<LibraryScreen>
     // Fetch offers if enabled
     final prefs = await SharedPreferences.getInstance();
     _offersEnabled = prefs.getBool('offers_enabled') ?? false;
+    _seenOfferIds = (prefs.getStringList('seen_offer_ids') ?? []).toSet();
     if (_offersEnabled) {
       final offers = await OffersService().fetch(enabled: true);
       final matcher = OffersMatcher(_analytics);
@@ -800,17 +815,22 @@ class _LibraryScreenState extends State<LibraryScreen>
                         setState(() => _insightsExpanded = !_insightsExpanded),
                     matchedOffers: _matchedOffers,
                     offersEnabled: _offersEnabled,
+                    onOpenOffers: () => setState(() => _tab = 3),
                   ),
                   // ── Settings Tab ──
                   const SettingsScreen(),
+                  // ── Offers Tab ──
+                  OffersScreen(apps: _apps, onSaveApp: _refresh),
                 ],
               ),
             ),
       bottomNavigationBar: GlassBottomNav(
         selectedIndex: _tab,
+        showOfferDot: _offersEnabled && _matchedOffers.any((m) => !_seenOfferIds.contains(m.offer.id)),
         onTap: (i) {
           setState(() => _tab = i);
           if (i == 0) _refresh();
+          if (i == 3) _markOffersSeen();
         },
         adBanner: (!_ads.adsRemoved && _ads.bannerAd != null)
             ? SizedBox(
@@ -1267,6 +1287,7 @@ class _DashboardView extends StatelessWidget {
   final VoidCallback onToggleInsights;
   final List<MatchedOffer> matchedOffers;
   final bool offersEnabled;
+  final VoidCallback onOpenOffers;
 
   const _DashboardView({
     required this.apps,
@@ -1283,6 +1304,7 @@ class _DashboardView extends StatelessWidget {
     required this.onToggleInsights,
     required this.matchedOffers,
     required this.offersEnabled,
+    required this.onOpenOffers,
   });
 
   @override
@@ -1736,12 +1758,7 @@ class _DashboardView extends StatelessWidget {
         if (offersEnabled && matchedOffers.isNotEmpty) ...[
           const SizedBox(height: 14),
           GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => OffersScreen(matches: matchedOffers),
-              ),
-            ),
+            onTap: onOpenOffers,
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(

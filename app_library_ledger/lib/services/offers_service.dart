@@ -18,10 +18,11 @@ class OffersService {
   List<SavingsOffer>? _cached;
   DateTime? _cacheTime;
 
-  Future<List<SavingsOffer>> fetch({bool enabled = false}) async {
+  Future<List<SavingsOffer>> fetch({bool enabled = false, bool force = false}) async {
     if (!enabled) return const [];
-    // Return cache if fresh (<12h)
-    if (_cached != null &&
+    // Return cache if fresh (<12h) and not forced
+    if (!force &&
+        _cached != null &&
         _cacheTime != null &&
         DateTime.now().difference(_cacheTime!).inHours < 12) {
       return _cached!;

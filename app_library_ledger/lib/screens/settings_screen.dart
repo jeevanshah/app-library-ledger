@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../services/settings_service.dart';
 import '../services/notification_service.dart';
 import '../services/storage_service.dart';
@@ -16,7 +15,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late NotificationSettings _s;
-  bool _offersEnabled = false;
   bool _loading = true;
 
   @override
@@ -27,15 +25,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _load() async {
     _s = await SettingsService().load();
-    final prefs = await SharedPreferences.getInstance();
-    _offersEnabled = prefs.getBool('offers_enabled') ?? false;
     setState(() => _loading = false);
-  }
-
-  Future<void> _setOffersEnabled(bool v) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('offers_enabled', v);
-    setState(() => _offersEnabled = v);
   }
 
   Future<void> _update(NotificationSettings updated) async {
@@ -320,12 +310,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   // Savings Offers
                   _sectionLabel('SAVINGS OFFERS'),
                   const SizedBox(height: 12),
-                  _row(
-                    'Savings offers',
-                    trailing: Switch(
-                      value: _offersEnabled,
-                      activeColor: AppTokens.brandEnd,
-                      onChanged: _setOffersEnabled,
+                  ValueListenableBuilder<bool>(
+                    valueListenable: SettingsService().offersEnabled,
+                    builder: (_, enabled, __) => _row(
+                      'Savings offers',
+                      trailing: Switch(
+                        value: enabled,
+                        activeColor: AppTokens.brandEnd,
+                        onChanged: (v) => SettingsService().setOffersEnabled(v),
+                      ),
                     ),
                   ),
                   Padding(

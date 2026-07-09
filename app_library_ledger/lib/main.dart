@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'services/storage_service.dart';
 import 'services/notification_service.dart';
 import 'services/ad_service.dart';
+import 'services/settings_service.dart';
 import 'models/app_model.dart';
 import 'models/category_model.dart';
 import 'screens/library_screen.dart';
@@ -28,6 +29,7 @@ void main() async {
   } catch (e) {
     debugPrint('Ad init failed: $e');
   }
+  await SettingsService().initOffersEnabled();
   runApp(const MyApp());
 }
 

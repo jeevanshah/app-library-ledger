@@ -204,11 +204,13 @@ class GlassBottomNav extends StatelessWidget {
   final int selectedIndex;
   final void Function(int) onTap;
   final Widget? adBanner;
+  final bool showOfferDot;
   const GlassBottomNav({
     super.key,
     required this.selectedIndex,
     required this.onTap,
     this.adBanner,
+    this.showOfferDot = false,
   });
 
   @override
@@ -241,6 +243,12 @@ class GlassBottomNav extends StatelessWidget {
                 children: [
                   _navItem(0, Icons.grid_view_rounded, 'Library'),
                   _navItem(1, Icons.show_chart_rounded, 'Dashboard'),
+                  _navItem(
+                    3,
+                    Icons.local_offer_rounded,
+                    'Offers',
+                    dot: showOfferDot && selectedIndex != 3,
+                  ),
                   _navItem(2, Icons.settings_rounded, 'Settings'),
                 ],
               ),
@@ -251,11 +259,8 @@ class GlassBottomNav extends StatelessWidget {
     );
   }
 
-  Widget _navItem(int index, IconData icon, String label) {
+  Widget _navItem(int index, IconData icon, String label, {bool dot = false}) {
     final active = selectedIndex == index;
-    // Expanded + opaque hit-testing: each item owns a full third of the
-    // bar at full height, so taps register anywhere in its zone — not
-    // just on the icon's painted pixels.
     return Expanded(
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -264,32 +269,56 @@ class GlassBottomNav extends StatelessWidget {
           child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: active
             ? BoxDecoration(
                 gradient: AppTokens.brandGradient,
                 borderRadius: BorderRadius.circular(12),
               )
             : null,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+        // FittedBox: with 4 tabs each item gets ~89dp on a 360dp screen;
+        // the active item (icon + label + padding) can exceed that, so
+        // scale down gracefully instead of overflowing.
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            Icon(
-              icon,
-              size: 18,
-              color: active ? Colors.white : AppTokens.textFaint,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: 18,
+                  color: active ? Colors.white : AppTokens.textFaint,
+                ),
+                if (active) const SizedBox(width: 6),
+                if (active)
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+              ],
             ),
-            if (active) const SizedBox(width: 6),
-            if (active)
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
+            if (dot)
+              Positioned(
+                top: -2,
+                right: -6,
+                child: Container(
+                  width: 7,
+                  height: 7,
+                  decoration: const BoxDecoration(
+                    color: AppTokens.gold,
+                    shape: BoxShape.circle,
+                  ),
                 ),
               ),
           ],
+          ),
         ),
           ),
         ),
