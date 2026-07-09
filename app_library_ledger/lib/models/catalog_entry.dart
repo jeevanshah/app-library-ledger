@@ -28,6 +28,7 @@ class CatalogEntry {
   final DiscoveryType discoveryType;
   final List<PricingTier> pricingTiers;
   final String? domain;
+  final String? serviceType; // "nbn", "mobile", or null
 
   const CatalogEntry({
     required this.id,
@@ -37,6 +38,7 @@ class CatalogEntry {
     required this.discoveryType,
     this.pricingTiers = const [],
     this.domain,
+    this.serviceType,
   });
 
   factory CatalogEntry.fromJson(Map<String, dynamic> json) {
@@ -63,6 +65,7 @@ class CatalogEntry {
               .toList() ??
           const [],
       domain: json['domain'] as String?,
+      serviceType: json['serviceType'] as String?,
     );
   }
 
@@ -73,6 +76,7 @@ class CatalogEntry {
     category: category,
     packageName: packageName,
     isActiveSubscription: false,
+    serviceType: serviceType,
   );
 
   String _deriveAppStoreLink() {

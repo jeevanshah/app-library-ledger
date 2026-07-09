@@ -56,6 +56,7 @@ class _AddAppScreenState extends State<AddAppScreen>
   final _scrollKey = GlobalKey();
   final _billingKey = GlobalKey();
   List<CatalogEntry> _quickEntries = [];
+  String? _serviceType; // "nbn", "mobile", or null
 
   double? get _parsedCost => double.tryParse(_costCtrl.text.trim());
 
@@ -97,6 +98,7 @@ class _AddAppScreenState extends State<AddAppScreen>
         _regularCtrl.text = a.regularPrice!.toStringAsFixed(2);
       }
       _promoEnds = a.promotionEndsDate;
+      _serviceType = a.serviceType;
       if ((a.isPromotionalPrice || (a.notes != null && a.notes!.isNotEmpty))) {
         _expanded = true;
       }
@@ -310,6 +312,7 @@ class _AddAppScreenState extends State<AddAppScreen>
       isPromotionalPrice: _isSub && _isPromo,
       regularPrice: (_isSub && _isPromo) ? regular : null,
       promotionEndsDate: (_isSub && _isPromo) ? _promoEnds : null,
+      serviceType: _serviceType,
     );
 
     if (widget.appToEdit != null) {
@@ -398,6 +401,7 @@ class _AddAppScreenState extends State<AddAppScreen>
       _nameCtrl.text = catEntry.name;
       _matchedCatalog = catEntry;
       _isSub = true;
+      _serviceType = catEntry.serviceType;
       if (catEntry.pricingTiers.isNotEmpty) {
         _costCtrl.text = catEntry.pricingTiers.first.monthlyPrice
             .toStringAsFixed(2);
@@ -665,6 +669,68 @@ class _AddAppScreenState extends State<AddAppScreen>
           ),
         ),
       ),
+    );
+  }
+
+  Widget _serviceTypePicker() {
+    return _labeled(
+      'Plan type (optional)',
+      Container(
+        height: 48,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: AppTokens.fieldBg,
+          borderRadius: BorderRadius.circular(AppTokens.rInput),
+          border: Border.all(color: AppTokens.hairline),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: () => setState(() => _serviceType = _serviceType == 'nbn' ? null : 'nbn'),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    gradient: _serviceType == 'nbn' ? AppTokens.brandGradient : null,
+                    borderRadius: BorderRadius.circular(AppTokens.rInput - 3),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'NBN',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: _serviceType == 'nbn' ? Colors.white : AppTokens.textFaint,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: GestureDetector(
+                onTap: () => setState(() => _serviceType = _serviceType == 'mobile' ? null : 'mobile'),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    gradient: _serviceType == 'mobile' ? AppTokens.brandGradient : null,
+                    borderRadius: BorderRadius.circular(AppTokens.rInput - 3),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'Mobile',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: _serviceType == 'mobile' ? Colors.white : AppTokens.textFaint,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      helper: 'Helps match offers to your plan',
     );
   }
 
@@ -1189,6 +1255,8 @@ class _AddAppScreenState extends State<AddAppScreen>
                                 child: _costCycleRow(),
                               ),
                             ),
+                            const SizedBox(height: 16),
+                            _serviceTypePicker(),
                             const SizedBox(height: 16),
                             _labeled(
                               'Next renewal date',

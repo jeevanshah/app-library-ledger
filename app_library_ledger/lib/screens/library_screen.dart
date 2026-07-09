@@ -309,6 +309,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                             nextRenewalDate: a.nextRenewalDate,
                             isActiveSubscription: a.isActiveSubscription,
                             isPromotionalPrice: false,
+                            serviceType: a.serviceType,
                           );
                           await StorageService().saveApp(updated);
                           await NotificationService().cancelPromoReminders(
@@ -377,6 +378,7 @@ class _LibraryScreenState extends State<LibraryScreen>
       nextRenewalDate: a.nextRenewalDate,
       isActiveSubscription: a.isActiveSubscription,
       isPromotionalPrice: true,
+      serviceType: a.serviceType,
       regularPrice: a.regularPrice,
       promotionEndsDate: picked,
     );

@@ -16,6 +16,7 @@ class AppEntry {
   final double? regularPrice;
   final DateTime? promotionEndsDate;
   final String? serviceTier; // user's speed/data tier for NBN/mobile comparison
+  final String? serviceType; // "nbn", "mobile", or null
   AppEntry({
     String? id,
     required this.name,
@@ -32,6 +33,7 @@ class AppEntry {
     this.regularPrice,
     this.promotionEndsDate,
     this.serviceTier,
+    this.serviceType,
   }) : id = id ?? const Uuid().v4(),
        createdAt = createdAt ?? DateTime.now();
 
@@ -51,6 +53,7 @@ class AppEntry {
     'regularPrice': regularPrice,
     'promotionEndsDate': promotionEndsDate?.toIso8601String(),
     'serviceTier': serviceTier,
+    'serviceType': serviceType,
   };
 
   factory AppEntry.fromJson(Map<String, dynamic> json) => AppEntry(
@@ -72,5 +75,7 @@ class AppEntry {
     promotionEndsDate: json['promotionEndsDate'] != null
         ? DateTime.parse(json['promotionEndsDate'] as String)
         : null,
+    serviceTier: json['serviceTier'] as String?,
+    serviceType: json['serviceType'] as String?,
   );
 }

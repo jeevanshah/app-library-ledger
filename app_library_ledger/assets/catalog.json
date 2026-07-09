@@ -1112,6 +1112,33 @@
         "currency": "AUD"
       }
     ],
-    "domain": "telstra.com.au"
+    "domain": "telstra.com.au",
+    "serviceType": "nbn"
+  },
+  {
+    "id": "mobile-plan",
+    "name": "Mobile SIM Plan",
+    "packageName": null,
+    "category": "Utilities",
+    "discoveryType": "web_manual",
+    "pricingTiers": [
+      {
+        "tierName": "Small (20GB)",
+        "monthlyPrice": 25.0,
+        "currency": "AUD"
+      },
+      {
+        "tierName": "Medium (50GB)",
+        "monthlyPrice": 35.0,
+        "currency": "AUD"
+      },
+      {
+        "tierName": "Large (100GB)",
+        "monthlyPrice": 45.0,
+        "currency": "AUD"
+      }
+    ],
+    "domain": "telstra.com.au",
+    "serviceType": "mobile"
   }
 ]
