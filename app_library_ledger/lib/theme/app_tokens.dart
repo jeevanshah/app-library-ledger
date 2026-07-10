@@ -203,13 +203,11 @@ Widget _buildAvatar(String letter, List<Color> colors, double size) {
 class GlassBottomNav extends StatelessWidget {
   final int selectedIndex;
   final void Function(int) onTap;
-  final Widget? adBanner;
   final bool showOfferDot;
   const GlassBottomNav({
     super.key,
     required this.selectedIndex,
     required this.onTap,
-    this.adBanner,
     this.showOfferDot = false,
   });
 
@@ -218,7 +216,6 @@ class GlassBottomNav extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (adBanner != null) adBanner!,
         ClipRRect(
           borderRadius: const BorderRadius.vertical(
             top: Radius.circular(AppTokens.rNav),

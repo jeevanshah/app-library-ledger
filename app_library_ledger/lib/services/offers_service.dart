@@ -28,20 +28,22 @@ class OffersService {
       return _cached!;
     }
 
-    // Try loading from prefs first
+    // Try loading from prefs (skip if force-refreshing)
     final prefs = await SharedPreferences.getInstance();
     final rawCache = prefs.getString(_cacheKey);
     final cacheTimeStr = prefs.getString(_timeKey);
-    if (rawCache != null && cacheTimeStr != null) {
-      final cacheTime = DateTime.tryParse(cacheTimeStr);
-      if (cacheTime != null &&
-          DateTime.now().difference(cacheTime).inHours < 12) {
-        try {
-          _cached = _parse(jsonDecode(rawCache) as List<dynamic>);
-          _cacheTime = cacheTime;
-          return _cached!;
-        } catch (_) {}
-      }
+    if (!force && rawCache != null && cacheTimeStr != null) {
+        final cacheTime = DateTime.tryParse(cacheTimeStr);
+        if (cacheTime != null &&
+            DateTime.now().difference(cacheTime).inHours < 12) {
+          try {
+            _cached = _parse(jsonDecode(rawCache) as List<dynamic>);
+            _cacheTime = cacheTime;
+            return _cached!;
+          } catch (e) {
+            debugPrint('OffersService: fresh cache read failed: $e');
+          }
+        }
     }
 
     List<SavingsOffer>? offers;
@@ -62,13 +64,17 @@ class OffersService {
         await prefs.setString(_cacheKey, body);
         await prefs.setString(_timeKey, DateTime.now().toIso8601String());
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('OffersService: remote fetch failed: $e');
+    }
 
     // Fallback: local cache from prefs
     if (offers == null && rawCache != null) {
       try {
         offers = _parse(jsonDecode(rawCache) as List<dynamic>);
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('OffersService: stale cache fallback failed: $e');
+      }
     }
 
     // kDebugMode fallback: bundled sample
@@ -76,7 +82,9 @@ class OffersService {
       try {
         final sample = await rootBundle.loadString('assets/offers_sample.json');
         offers = _parse(jsonDecode(sample) as List<dynamic>);
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('OffersService: bundled sample fallback failed: $e');
+      }
     }
 
     _cached = offers ?? [];
@@ -89,7 +97,9 @@ class OffersService {
     for (final json in raw) {
       try {
         result.add(SavingsOffer.fromJson(json as Map<String, dynamic>));
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('OffersService: skipping invalid offer entry: $e');
+      }
     }
     return result;
   }

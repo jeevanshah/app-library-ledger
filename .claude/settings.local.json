@@ -10,7 +10,14 @@
       "Bash(/c/flutter/bin/flutter test *)",
       "Bash(cd \"/c/Users/Deep/Desktop/mobile-app/app-library-ledger/app_library_ledger\" && /c/flutter/bin/flutter test test/screen_smoke_test.dart 2>&1 > /tmp/test_output.txt; grep -n \"creator:\\\\|RenderFlex overflowed\\\\|relevant error-causing widget\\\\|The test description was\\\\|EXCEPTION CAUGHT\\\\|+.*-.*:\" /tmp/test_output.txt | head -150)",
       "Read(//tmp/**)",
-      "Bash(/c/flutter/bin/flutter build *)"
+      "Bash(/c/flutter/bin/flutter build *)",
+      "WebSearch",
+      "WebFetch(domain:www.spintel.net.au)",
+      "Bash(flutter analyze *)",
+      "PowerShell(Get-Command flutter -ErrorAction SilentlyContinue; $env:PATH -split ';' | Select-String -Pattern 'flutter' ; Test-Path \"$env:LOCALAPPDATA\\\\flutter\\\\bin\\\\flutter.bat\"; Test-Path \"C:\\\\flutter\\\\bin\\\\flutter.bat\"; Test-Path \"C:\\\\src\\\\flutter\\\\bin\\\\flutter.bat\")",
+      "PowerShell(cd app_library_ledger; & \"$env:LOCALAPPDATA\\\\flutter\\\\bin\\\\flutter.bat\" analyze 2>&1 | Out-String -Width 200)",
+      "PowerShell(& \"C:\\\\flutter\\\\bin\\\\flutter.bat\" analyze 2>&1)",
+      "Bash(git add *)"
     ]
   }
 }

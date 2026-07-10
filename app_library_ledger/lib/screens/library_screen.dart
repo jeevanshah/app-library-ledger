@@ -4,18 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_model.dart';
 import '../models/category_model.dart';
 import '../services/storage_service.dart';
 import '../services/notification_service.dart';
-import '../services/ad_service.dart';
 import '../services/analytics_service.dart';
 import '../services/app_icon_service.dart';
 import '../services/catalog_service.dart';
+import '../services/settings_service.dart';
 import '../services/subscription_scanner.dart';
-import '../models/offer.dart';
 import '../services/offers_service.dart';
 import '../services/offers_matcher.dart';
 import '../theme/app_tokens.dart';
@@ -52,6 +50,8 @@ class _LibraryScreenState extends State<LibraryScreen>
   List<MatchedOffer> _matchedOffers = [];
   bool _offersEnabled = false;
   Set<String> _seenOfferIds = {};
+  bool _refreshing = false;
+  late final SettingsService _settingsService = SettingsService();
 
   /// Marks all currently matched offers as seen and persists the set,
   /// clearing the gold dot on the Offers nav icon. Called when the
@@ -63,10 +63,8 @@ class _LibraryScreenState extends State<LibraryScreen>
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList('seen_offer_ids', _seenOfferIds.toList());
   }
-  List<SavingsOffer> _allOffers = [];
 
   final _analytics = AnalyticsService();
-  final _ads = AdService();
   final _scrollCtrl = ScrollController();
   late final AnimationController _counterCtrl;
   late final Animation<double> _counterAnim;
@@ -84,88 +82,100 @@ class _LibraryScreenState extends State<LibraryScreen>
       parent: _counterCtrl,
       curve: Curves.easeOutCubic,
     );
+    _settingsService.offersEnabled.addListener(_onOffersToggled);
     _refresh();
+  }
+
+  void _onOffersToggled() {
+    setState(() => _offersEnabled = _settingsService.offersEnabled.value);
   }
 
   @override
   void dispose() {
+    _settingsService.offersEnabled.removeListener(_onOffersToggled);
     _counterCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _refresh() async {
+    if (_refreshing) return;
+    _refreshing = true;
     setState(() => _loading = true);
-    final apps = await StorageService().getApps();
-    final cats = await StorageService().getCategories();
-    if (!mounted) return;
-
-    final pkgNames = apps
-        .where((a) => a.packageName != null)
-        .map((a) => a.packageName!)
-        .toList();
-    if (pkgNames.isNotEmpty) await AppIconService().loadIcons(pkgNames);
-
-    // I4: Installed package scan
-    final catalog = CatalogService();
-    await catalog.loadCatalog();
-    final scanPkgs = catalog.appScanEntries.map((e) => e.packageName!).toList();
-    if (scanPkgs.isNotEmpty) {
-      try {
-        final installed = await packageScannerChannel
-            .invokeMethod<List<dynamic>>('checkPackagesSurgically', scanPkgs);
-        _installedPkgs = (installed ?? []).map((e) => e.toString()).toSet();
-      } catch (_) {
-        _installedPkgs = {};
-      }
-    }
-
-    // Dismissed insights
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('dismissed_insights');
-      if (raw != null) {
-        final decoded = jsonDecode(raw) as Map<String, dynamic>;
-        _dismissedInsights = decoded.map((k, v) => MapEntry(k, v as int));
-        _dismissedInsights.removeWhere(
-          (k, v) =>
-              (DateTime.now().millisecondsSinceEpoch - v) > (30 * 86400 * 1000),
-        );
-      }
-      final prRaw = prefs.getString('promo_resolve_dismissed');
-      if (prRaw != null) {
-        final prDecoded = jsonDecode(prRaw) as Map<String, dynamic>;
-        final nowMs = DateTime.now().millisecondsSinceEpoch;
-        _dismissedPromoResolve = {};
-        for (final e in prDecoded.entries) {
-          final ts = e.value as int;
-          if ((nowMs - ts) < (7 * 86400 * 1000))
-            _dismissedPromoResolve.add(e.key);
+      final apps = await StorageService().getApps();
+      final cats = await StorageService().getCategories();
+      if (!mounted) return;
+
+      final pkgNames = apps
+          .where((a) => a.packageName != null)
+          .map((a) => a.packageName!)
+          .toList();
+      if (pkgNames.isNotEmpty) await AppIconService().loadIcons(pkgNames);
+
+      // I4: Installed package scan
+      final catalog = CatalogService();
+      await catalog.loadCatalog();
+      final scanPkgs = catalog.appScanEntries.map((e) => e.packageName!).toList();
+      if (scanPkgs.isNotEmpty) {
+        try {
+          final installed = await packageScannerChannel
+              .invokeMethod<List<dynamic>>('checkPackagesSurgically', scanPkgs);
+          _installedPkgs = (installed ?? []).map((e) => e.toString()).toSet();
+        } catch (_) {
+          _installedPkgs = {};
         }
       }
-    } catch (_) {}
 
-    if (!mounted) return;
+      // Dismissed insights
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final raw = prefs.getString('dismissed_insights');
+        if (raw != null) {
+          final decoded = jsonDecode(raw) as Map<String, dynamic>;
+          _dismissedInsights = decoded.map((k, v) => MapEntry(k, v as int));
+          _dismissedInsights.removeWhere(
+            (k, v) =>
+                (DateTime.now().millisecondsSinceEpoch - v) > (30 * 86400 * 1000),
+          );
+        }
+        final prRaw = prefs.getString('promo_resolve_dismissed');
+        if (prRaw != null) {
+          final prDecoded = jsonDecode(prRaw) as Map<String, dynamic>;
+          final nowMs = DateTime.now().millisecondsSinceEpoch;
+          _dismissedPromoResolve = {};
+          for (final e in prDecoded.entries) {
+            final ts = e.value as int;
+            if ((nowMs - ts) < (7 * 86400 * 1000))
+              _dismissedPromoResolve.add(e.key);
+          }
+        }
+      } catch (_) {}
 
-    // Fetch offers if enabled
-    final prefs = await SharedPreferences.getInstance();
-    _offersEnabled = prefs.getBool('offers_enabled') ?? false;
-    _seenOfferIds = (prefs.getStringList('seen_offer_ids') ?? []).toSet();
-    if (_offersEnabled) {
-      final offers = await OffersService().fetch(enabled: true);
-      final matcher = OffersMatcher(_analytics);
-      _matchedOffers = matcher.match(apps, offers);
-    } else {
-      _matchedOffers = [];
+      if (!mounted) return;
+
+      // Fetch offers if enabled
+      final prefs = await SharedPreferences.getInstance();
+      _offersEnabled = prefs.getBool('offers_enabled') ?? false;
+      _seenOfferIds = (prefs.getStringList('seen_offer_ids') ?? []).toSet();
+      if (_offersEnabled) {
+        final offers = await OffersService().fetch(enabled: true);
+        final matcher = OffersMatcher(_analytics);
+        _matchedOffers = matcher.match(apps, offers);
+      } else {
+        _matchedOffers = [];
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _apps = apps;
+        _cats = cats;
+        _loading = false;
+      });
+      _counterCtrl.forward(from: 0);
+    } finally {
+      _refreshing = false;
     }
-
-    if (!mounted) return;
-    setState(() {
-      _apps = apps;
-      _cats = cats;
-      _loading = false;
-    });
-    _counterCtrl.forward(from: 0);
   }
 
   Future<void> _goAdd() async {
@@ -831,15 +841,8 @@ class _LibraryScreenState extends State<LibraryScreen>
         showOfferDot: _offersEnabled && _matchedOffers.any((m) => !_seenOfferIds.contains(m.offer.id)),
         onTap: (i) {
           setState(() => _tab = i);
-          if (i == 0) _refresh();
           if (i == 3) _markOffersSeen();
         },
-        adBanner: (!_ads.adsRemoved && _ads.bannerAd != null)
-            ? SizedBox(
-                height: _ads.bannerAd!.size.height.toDouble(),
-                child: AdWidget(ad: _ads.bannerAd!),
-              )
-            : null,
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _goAdd,

@@ -37,6 +37,40 @@ class AppEntry {
   }) : id = id ?? const Uuid().v4(),
        createdAt = createdAt ?? DateTime.now();
 
+  AppEntry copyWith({
+    String? name,
+    String? appStoreLink,
+    String? category,
+    String? packageName,
+    String? notes,
+    double? subscriptionCost,
+    String? billingCycle,
+    DateTime? nextRenewalDate,
+    bool? isActiveSubscription,
+    bool? isPromotionalPrice,
+    double? regularPrice,
+    DateTime? promotionEndsDate,
+    String? serviceTier,
+    String? serviceType,
+  }) => AppEntry(
+    id: id,
+    name: name ?? this.name,
+    appStoreLink: appStoreLink ?? this.appStoreLink,
+    category: category ?? this.category,
+    packageName: packageName ?? this.packageName,
+    notes: notes ?? this.notes,
+    createdAt: createdAt,
+    subscriptionCost: subscriptionCost ?? this.subscriptionCost,
+    billingCycle: billingCycle ?? this.billingCycle,
+    nextRenewalDate: nextRenewalDate ?? this.nextRenewalDate,
+    isActiveSubscription: isActiveSubscription ?? this.isActiveSubscription,
+    isPromotionalPrice: isPromotionalPrice ?? this.isPromotionalPrice,
+    regularPrice: regularPrice ?? this.regularPrice,
+    promotionEndsDate: promotionEndsDate ?? this.promotionEndsDate,
+    serviceTier: serviceTier ?? this.serviceTier,
+    serviceType: serviceType ?? this.serviceType,
+  );
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
@@ -57,12 +91,12 @@ class AppEntry {
   };
 
   factory AppEntry.fromJson(Map<String, dynamic> json) => AppEntry(
-    id: json['id'],
-    name: json['name'],
-    appStoreLink: json['appStoreLink'],
-    category: json['category'],
+    id: json['id'] as String?,
+    name: json['name'] as String? ?? '',
+    appStoreLink: json['appStoreLink'] as String? ?? '',
+    category: json['category'] as String? ?? '',
     packageName: json['packageName'] as String?,
-    notes: json['notes'],
+    notes: json['notes'] as String?,
     createdAt: DateTime.parse(json['createdAt']),
     subscriptionCost: json['subscriptionCost'] as double?,
     billingCycle: json['billingCycle'] as String?,

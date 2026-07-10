@@ -17,10 +17,12 @@ class AddAppScreen extends StatefulWidget {
   final List<Category> categories;
   final AppEntry? appToEdit;
   final bool focusBilling;
+  final String? prefillServiceType; // "nbn" or "mobile" from Offers tab
   const AddAppScreen({
     required this.categories,
     this.appToEdit,
     this.focusBilling = false,
+    this.prefillServiceType,
     super.key,
   });
   @override
@@ -55,8 +57,11 @@ class _AddAppScreenState extends State<AddAppScreen>
   late final AnimationController _highlightCtrl;
   final _scrollKey = GlobalKey();
   final _billingKey = GlobalKey();
+  final _nameKey = GlobalKey();
+  final _renewalKey = GlobalKey();
   List<CatalogEntry> _quickEntries = [];
   String? _serviceType; // "nbn", "mobile", or null
+  String? _serviceTier; // user's speed/data tier
 
   double? get _parsedCost => double.tryParse(_costCtrl.text.trim());
 
@@ -99,6 +104,10 @@ class _AddAppScreenState extends State<AddAppScreen>
       }
       _promoEnds = a.promotionEndsDate;
       _serviceType = a.serviceType;
+      _serviceTier = a.serviceTier;
+      if (widget.prefillServiceType != null) {
+        _serviceType = widget.prefillServiceType;
+      }
       if ((a.isPromotionalPrice || (a.notes != null && a.notes!.isNotEmpty))) {
         _expanded = true;
       }
@@ -116,6 +125,15 @@ class _AddAppScreenState extends State<AddAppScreen>
     }
 
     _category = _resolveCategory(initialCategory);
+
+    if (widget.prefillServiceType != null && widget.appToEdit == null) {
+      _serviceType = widget.prefillServiceType;
+      _isSub = true;
+      _category = 'Utilities';
+      if (_findCategory('Utilities') == null) {
+        _categories.add(Category(name: 'Utilities', color: AppTokens.categoryColor('Utilities'), isCustom: false));
+      }
+    }
 
     _staggerCtrl = AnimationController(
       vsync: this,
@@ -285,7 +303,18 @@ class _AddAppScreenState extends State<AddAppScreen>
       _costError = costMissing;
       _renewalError = dateMissing;
     });
-    return !nameEmpty && !costMissing && !dateMissing;
+    final ok = !nameEmpty && !costMissing && !dateMissing;
+    if (!ok) {
+      final target = nameEmpty ? _nameKey
+          : costMissing ? _billingKey
+          : _renewalKey;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (target.currentContext != null) {
+          Scrollable.ensureVisible(target.currentContext!, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+        }
+      });
+    }
+    return ok;
   }
 
   Future<void> _save() async {
@@ -313,6 +342,8 @@ class _AddAppScreenState extends State<AddAppScreen>
       regularPrice: (_isSub && _isPromo) ? regular : null,
       promotionEndsDate: (_isSub && _isPromo) ? _promoEnds : null,
       serviceType: _serviceType,
+      serviceTier: _serviceTier,
+      createdAt: widget.appToEdit?.createdAt,
     );
 
     if (widget.appToEdit != null) {
@@ -673,6 +704,30 @@ class _AddAppScreenState extends State<AddAppScreen>
   }
 
   Widget _serviceTypePicker() {
+    final prefill = widget.prefillServiceType;
+    if (prefill != null) {
+      return _labeled(
+        'Plan type',
+        Row(children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: AppTokens.brandGradient,
+              borderRadius: BorderRadius.circular(AppTokens.rInput),
+            ),
+            child: Text(
+              prefill == 'nbn' ? 'NBN' : 'Mobile',
+              style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            'Set from Offers tab',
+            style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12),
+          ),
+        ]),
+      );
+    }
     return _labeled(
       'Plan type (optional)',
       Container(
@@ -1185,6 +1240,7 @@ class _AddAppScreenState extends State<AddAppScreen>
           Expanded(
             child: ListView(
               key: _scrollKey,
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               padding: const EdgeInsets.only(bottom: 24),
               children: [
                 if (!isEdit) _quickAddSection(),
@@ -1196,7 +1252,7 @@ class _AddAppScreenState extends State<AddAppScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _labeled(
+                      Container(key: _nameKey, child: _labeled(
                         'App Name',
                         _textField(
                           controller: _nameCtrl,
@@ -1208,7 +1264,7 @@ class _AddAppScreenState extends State<AddAppScreen>
                         ),
                         helper: _nameError ? 'Name is required' : null,
                         error: _nameError,
-                      ),
+                      )),
                       const SizedBox(height: 16),
                       _categoryField(),
                       const SizedBox(height: 16),
@@ -1255,10 +1311,12 @@ class _AddAppScreenState extends State<AddAppScreen>
                                 child: _costCycleRow(),
                               ),
                             ),
-                            const SizedBox(height: 16),
-                            _serviceTypePicker(),
-                            const SizedBox(height: 16),
-                            _labeled(
+                            if (widget.prefillServiceType != null) ...[
+                              const SizedBox(height: 16),
+                              _serviceTypePicker(),
+                              const SizedBox(height: 16),
+                            ],
+                            Container(key: _renewalKey, child: _labeled(
                               'Next renewal date',
                               _dateField(
                                 date: _renewal,
@@ -1276,7 +1334,7 @@ class _AddAppScreenState extends State<AddAppScreen>
                                   ? 'Renewal date is required'
                                   : null,
                               error: _renewalError,
-                            ),
+                            )),
                             const SizedBox(height: 12),
                             // C4 — Progressive disclosure
                             GestureDetector(
@@ -1293,7 +1351,7 @@ class _AddAppScreenState extends State<AddAppScreen>
                                   ),
                                   const SizedBox(width: 6),
                                   Text(
-                                    'More options',
+                                    'Got a promo price? Don\'t miss when it ends',
                                     style: GoogleFonts.plusJakartaSans(
                                       color: AppTokens.textMuted,
                                       fontSize: 13,
@@ -1315,7 +1373,7 @@ class _AddAppScreenState extends State<AddAppScreen>
                                   const SizedBox(height: 16),
                                   _switchRow(
                                     title: 'Promotional price',
-                                    subtitle: 'Currently on a discounted rate',
+                                    subtitle: 'Discounted rate for a limited time',
                                     value: _isPromo,
                                     onChanged: (v) =>
                                         setState(() => _isPromo = v),
