@@ -21,17 +21,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   final _selected = <CatalogEntry>{};
   List<CatalogEntry> _detected = [];
   List<CatalogEntry> _webEntries = [];
-  final _existingIds = <String>{};
+  List<AppEntry> _existingApps = [];
   bool _scanning = true;
   bool _saving = false;
 
-  bool _isAlreadyAdded(CatalogEntry entry) {
-    if (_existingIds.contains(entry.id)) return true;
-    for (final id in _existingIds) {
-      if (id.toLowerCase() == entry.name.toLowerCase()) return true;
-    }
-    return false;
-  }
+  bool _isAlreadyAdded(CatalogEntry entry) => entry.isTrackedIn(_existingApps);
 
   @override
   void initState() {
@@ -45,11 +39,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     _webEntries = catalog.webManualEntries;
 
     // Load existing apps for deduplication
-    final existingApps = await StorageService().getApps();
-    for (final a in existingApps) {
-      if (a.packageName != null) _existingIds.add(a.packageName!);
-      _existingIds.add(a.name.toLowerCase());
-    }
+    _existingApps = await StorageService().getApps();
 
     final detected = await SubscriptionScanner.scanDevice();
     if (detected.isNotEmpty) {
@@ -63,12 +53,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
     if (!mounted) return;
     setState(() {
-      _detected = detected;
-      // Only pre-select entries not already added
-      for (final e in detected) {
-        if (!_isAlreadyAdded(e)) _selected.add(e);
-      }
-      // Skip web entries that are already saved
+      // Exclude entries already tracked, so they can't be re-added as duplicates
+      _detected = detected.where((e) => !_isAlreadyAdded(e)).toList();
+      _selected.addAll(_detected);
       _webEntries = _webEntries.where((e) => !_isAlreadyAdded(e)).toList();
       _scanning = false;
     });

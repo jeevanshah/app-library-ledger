@@ -1,5 +1,11 @@
 import 'package:uuid/uuid.dart';
 
+class _Unset {
+  const _Unset();
+}
+
+const _unset = _Unset();
+
 class AppEntry {
   final String id;
   final String name;
@@ -51,7 +57,7 @@ class AppEntry {
     double? regularPrice,
     DateTime? promotionEndsDate,
     String? serviceTier,
-    String? serviceType,
+    Object? serviceType = _unset,
   }) => AppEntry(
     id: id,
     name: name ?? this.name,
@@ -68,7 +74,9 @@ class AppEntry {
     regularPrice: regularPrice ?? this.regularPrice,
     promotionEndsDate: promotionEndsDate ?? this.promotionEndsDate,
     serviceTier: serviceTier ?? this.serviceTier,
-    serviceType: serviceType ?? this.serviceType,
+    serviceType: identical(serviceType, _unset)
+        ? this.serviceType
+        : serviceType as String?,
   );
 
   Map<String, dynamic> toJson() => {

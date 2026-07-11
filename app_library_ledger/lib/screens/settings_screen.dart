@@ -156,7 +156,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           '#${p['id']} ${p['title']}',
                           style: GoogleFonts.plusJakartaSans(
                             color: AppTokens.textPrimary,
-                            fontSize: 12,
+                            fontSize: 12.5,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -194,9 +194,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: CircularProgressIndicator(color: AppTokens.gold),
               )
             : ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 22),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTokens.padHeader,
+                ),
                 children: [
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AppTokens.gapSection),
                   _sectionLabel('SETTINGS'),
                   const SizedBox(height: 4),
                   Text(
@@ -207,7 +209,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: AppTokens.gapSection),
 
                   // Master toggle
                   _row(
@@ -218,7 +220,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onChanged: (v) => _update(_s.copyWith(enabled: v)),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppTokens.gapItem),
 
                   // Offsets section
                   Opacity(
@@ -234,7 +236,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: AppTokens.gapItem),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
@@ -247,13 +249,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 14,
-                                    vertical: 8,
+                                    vertical: 12,
                                   ),
                                   decoration: BoxDecoration(
                                     color: _s.offsets.contains(d)
                                         ? AppTokens.gold.withValues(alpha: 0.12)
                                         : AppTokens.fieldBg,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: BorderRadius.circular(
+                                      AppTokens.rPill,
+                                    ),
                                     border: Border.all(
                                       color: _s.offsets.contains(d)
                                           ? AppTokens.gold.withValues(
@@ -276,7 +280,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                           ],
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: AppTokens.gapItem),
                         _row(
                           'Promo ending alerts',
                           trailing: Switch(
@@ -287,7 +291,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 : null,
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: AppTokens.gapItem),
                         _row(
                           'Reminder time',
                           trailing: GestureDetector(
@@ -305,11 +309,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: AppTokens.gapSection),
 
                   // Savings Offers
                   _sectionLabel('SAVINGS OFFERS'),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppTokens.gapItem),
                   ValueListenableBuilder<bool>(
                     valueListenable: SettingsService().offersEnabled,
                     builder: (_, enabled, __) => _row(
@@ -322,27 +326,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.only(bottom: AppTokens.gapItem),
                     child: Text(
                       'Offers are downloaded anonymously. What you track never leaves your device. Links may earn us a commission.',
                       style: GoogleFonts.plusJakartaSans(
                         color: AppTokens.textMuted,
-                        fontSize: 12,
+                        fontSize: 11,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: AppTokens.gapSection),
 
                   // S4: About
                   _sectionLabel('ABOUT'),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppTokens.gapItem),
                   _row(
                     'Version',
                     trailing: Text(
                       '1.0.0',
                       style: GoogleFonts.spaceGrotesk(
                         color: AppTokens.textMuted,
-                        fontSize: 13,
+                        fontSize: 12.5,
                       ),
                     ),
                   ),
@@ -358,9 +362,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                   // S5: Developer (kDebugMode only)
                   if (kDebugMode) ...[
-                    const SizedBox(height: 32),
+                    const SizedBox(height: AppTokens.gapSection),
                     _sectionLabel('DEVELOPER'),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AppTokens.gapItem),
                     _row(
                       'Fire test notification now',
                       onTap: _fireTestNotification,

@@ -227,7 +227,8 @@ class _LibraryScreenState extends State<LibraryScreen>
     if (ok == true) {
       await StorageService().deleteApp(a.id);
       await NotificationService().cancelReminders(a.id);
-      await NotificationService().cancelPromoReminders(a.id);
+      final remaining = await StorageService().getApps();
+      await NotificationService().rescheduleAll(remaining);
       _refresh();
     }
   }
@@ -252,7 +253,7 @@ class _LibraryScreenState extends State<LibraryScreen>
       context: context,
       backgroundColor: AppTokens.cardBg,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => SafeArea(
         child: Padding(
@@ -273,10 +274,10 @@ class _LibraryScreenState extends State<LibraryScreen>
               ...expired.map(
                 (a) => Container(
                   margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(AppTokens.padCard),
                   decoration: BoxDecoration(
                     color: AppTokens.fieldBg,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppTokens.rInput),
                     border: Border.all(color: AppTokens.hairline),
                   ),
                   child: Row(
@@ -297,7 +298,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                               'Was \$${a.subscriptionCost?.toStringAsFixed(2)} → now \$${a.regularPrice?.toStringAsFixed(2)}',
                               style: GoogleFonts.spaceGrotesk(
                                 color: AppTokens.textMuted,
-                                fontSize: 12,
+                                fontSize: 12.5,
                                 fontFeatures: const [
                                   FontFeature.tabularFigures(),
                                 ],
@@ -308,18 +309,9 @@ class _LibraryScreenState extends State<LibraryScreen>
                       ),
                       TextButton(
                         onPressed: () async {
-                          final updated = AppEntry(
-                            id: a.id,
-                            name: a.name,
-                            appStoreLink: a.appStoreLink,
-                            category: a.category,
-                            packageName: a.packageName,
+                          final updated = a.copyWith(
                             subscriptionCost: a.regularPrice,
-                            billingCycle: a.billingCycle,
-                            nextRenewalDate: a.nextRenewalDate,
-                            isActiveSubscription: a.isActiveSubscription,
                             isPromotionalPrice: false,
-                            serviceType: a.serviceType,
                           );
                           await StorageService().saveApp(updated);
                           await NotificationService().cancelPromoReminders(
@@ -331,7 +323,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                         child: Text(
                           'Now paying \$${a.regularPrice?.toStringAsFixed(2)}',
                           style: GoogleFonts.plusJakartaSans(
-                            fontSize: 12,
+                            fontSize: 12.5,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -343,7 +335,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                         },
                         child: const Text(
                           'Still on promo',
-                          style: TextStyle(fontSize: 12),
+                          style: TextStyle(fontSize: 12.5),
                         ),
                       ),
                     ],
@@ -377,21 +369,7 @@ class _LibraryScreenState extends State<LibraryScreen>
       ),
     );
     if (picked == null || !mounted) return;
-    final updated = AppEntry(
-      id: a.id,
-      name: a.name,
-      appStoreLink: a.appStoreLink,
-      category: a.category,
-      packageName: a.packageName,
-      subscriptionCost: a.subscriptionCost,
-      billingCycle: a.billingCycle,
-      nextRenewalDate: a.nextRenewalDate,
-      isActiveSubscription: a.isActiveSubscription,
-      isPromotionalPrice: true,
-      serviceType: a.serviceType,
-      regularPrice: a.regularPrice,
-      promotionEndsDate: picked,
-    );
+    final updated = a.copyWith(isPromotionalPrice: true, promotionEndsDate: picked);
     await StorageService().saveApp(updated);
     await NotificationService().schedulePromoReminder(updated);
     _refresh();
@@ -468,8 +446,14 @@ class _LibraryScreenState extends State<LibraryScreen>
                   Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(22, 10, 22, 6),
+                        padding: const EdgeInsets.fromLTRB(
+                          AppTokens.padHeader,
+                          10,
+                          AppTokens.padHeader,
+                          6,
+                        ),
                         child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -505,7 +489,9 @@ class _LibraryScreenState extends State<LibraryScreen>
                               ),
                               decoration: BoxDecoration(
                                 color: AppTokens.gold.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(6),
+                                borderRadius: BorderRadius.circular(
+                                  AppTokens.rSmallPill,
+                                ),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -567,6 +553,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                                     ),
                                   ),
                                   height: height,
+                                  clipBehavior: Clip.antiAlias,
                                   padding: EdgeInsets.symmetric(
                                     vertical: vertPad,
                                     horizontal: horizPad,
@@ -596,31 +583,38 @@ class _LibraryScreenState extends State<LibraryScreen>
                                             fontWeight: FontWeight.w500,
                                           ),
                                         ),
-                                      AnimatedBuilder(
-                                        animation: _counterAnim,
-                                        builder: (_, __) => ShaderMask(
-                                          shaderCallback: (bounds) =>
-                                              LinearGradient(
-                                                colors: [
-                                                  AppTokens.gold,
-                                                  AppTokens.goldLight,
-                                                ],
-                                              ).createShader(bounds),
-                                          child: Text(
-                                            _fmt.format(
-                                              monthly * _counterAnim.value,
-                                            ),
-                                            style: GoogleFonts.playfairDisplay(
-                                              color: AppTokens.gold,
-                                              fontSize: amountFont,
-                                              fontWeight: FontWeight.w700,
-                                              height: t < 0.5 ? 1.0 : 1.2,
-                                              letterSpacing: t < 0.5
-                                                  ? -1.5
-                                                  : -0.5,
-                                              fontFeatures: const [
-                                                FontFeature.tabularFigures(),
-                                              ],
+                                      Flexible(
+                                        child: AnimatedBuilder(
+                                          animation: _counterAnim,
+                                          builder: (_, __) => ShaderMask(
+                                            shaderCallback: (bounds) =>
+                                                LinearGradient(
+                                                  colors: [
+                                                    AppTokens.gold,
+                                                    AppTokens.goldLight,
+                                                  ],
+                                                ).createShader(bounds),
+                                            child: FittedBox(
+                                              fit: BoxFit.scaleDown,
+                                              alignment: Alignment.centerRight,
+                                              child: Text(
+                                                _fmt.format(
+                                                  monthly * _counterAnim.value,
+                                                ),
+                                                maxLines: 1,
+                                                style: GoogleFonts.playfairDisplay(
+                                                  color: AppTokens.gold,
+                                                  fontSize: amountFont,
+                                                  fontWeight: FontWeight.w700,
+                                                  height: t < 0.5 ? 1.0 : 1.2,
+                                                  letterSpacing: t < 0.5
+                                                      ? -1.5
+                                                      : -0.5,
+                                                  fontFeatures: const [
+                                                    FontFeature.tabularFigures(),
+                                                  ],
+                                                ),
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -652,12 +646,16 @@ class _LibraryScreenState extends State<LibraryScreen>
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    _pill('$active active', AppTokens.gold),
+                                    Flexible(
+                                      child: _pill('$active active', AppTokens.gold),
+                                    ),
                                     const SizedBox(width: 12),
                                     if (active > 0)
-                                      _pill(
-                                        '\$${_analytics.getYearlyProjection(_apps).toStringAsFixed(0)}/yr',
-                                        AppTokens.textMuted,
+                                      Flexible(
+                                        child: _pill(
+                                          '\$${_analytics.getYearlyProjection(_apps).toStringAsFixed(0)}/yr',
+                                          AppTokens.textMuted,
+                                        ),
                                       ),
                                   ],
                                 ),
@@ -669,7 +667,9 @@ class _LibraryScreenState extends State<LibraryScreen>
                       if (expiredPromos.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 22),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTokens.padHeader,
+                          ),
                           child: Dismissible(
                             key: ValueKey(expiredPromos.first.id),
                             onDismissed: (_) =>
@@ -685,7 +685,9 @@ class _LibraryScreenState extends State<LibraryScreen>
                                   color: AppTokens.warning.withValues(
                                     alpha: 0.1,
                                   ),
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(
+                                    AppTokens.rInput,
+                                  ),
                                   border: Border.all(
                                     color: AppTokens.warning.withValues(
                                       alpha: 0.2,
@@ -723,7 +725,9 @@ class _LibraryScreenState extends State<LibraryScreen>
                         ),
                       ],
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 22),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTokens.padHeader,
+                        ),
                         child: Row(
                           children: [
                             Expanded(child: _searchField()),
@@ -745,10 +749,12 @@ class _LibraryScreenState extends State<LibraryScreen>
                       ),
                       const SizedBox(height: 10),
                       SizedBox(
-                        height: 38,
+                        height: 42,
                         child: ListView(
                           scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(horizontal: 22),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTokens.padHeader,
+                          ),
                           children: [
                             _chip('All', _apps.length, null, _cat == null),
                             for (final c in _cats)
@@ -849,7 +855,9 @@ class _LibraryScreenState extends State<LibraryScreen>
         backgroundColor: AppTokens.gold,
         foregroundColor: AppTokens.screenBg,
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTokens.rFab),
+        ),
         child: const Icon(Icons.add_rounded, size: 28),
       ),
     );
@@ -859,7 +867,7 @@ class _LibraryScreenState extends State<LibraryScreen>
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
     decoration: BoxDecoration(
       color: color.withValues(alpha: 0.08),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppTokens.rSmallPill),
     ),
     child: Text(
       text,
@@ -871,10 +879,10 @@ class _LibraryScreenState extends State<LibraryScreen>
     ),
   );
   Widget _searchField() => Container(
-    height: 42,
+    height: 44,
     decoration: BoxDecoration(
       color: AppTokens.fieldBg,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(AppTokens.rInput),
       border: Border.all(color: AppTokens.hairline),
     ),
     child: TextField(
@@ -885,7 +893,7 @@ class _LibraryScreenState extends State<LibraryScreen>
         prefixIcon: const Icon(
           Icons.search_rounded,
           size: 18,
-          color: Color(0xFF6B6B82),
+          color: AppTokens.textFaint,
         ),
         border: InputBorder.none,
         isDense: true,
@@ -900,14 +908,14 @@ class _LibraryScreenState extends State<LibraryScreen>
   Widget _iconBtn(IconData icon, {VoidCallback? onTap}) => GestureDetector(
     onTap: onTap,
     child: Container(
-      width: 42,
-      height: 42,
+      width: 44,
+      height: 44,
       decoration: BoxDecoration(
         color: AppTokens.fieldBg,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppTokens.rInput),
         border: Border.all(color: AppTokens.hairline),
       ),
-      child: Icon(icon, color: const Color(0xFF9B9BA8), size: 18),
+      child: Icon(icon, color: AppTokens.textMuted, size: 18),
     ),
   );
   Widget _chip(String name, int count, Color? color, bool selected) => Padding(
@@ -915,7 +923,7 @@ class _LibraryScreenState extends State<LibraryScreen>
     child: GestureDetector(
       onTap: () {
         HapticFeedback.selectionClick();
-        setState(() => _cat = selected ? null : name);
+        setState(() => _cat = (selected || name == 'All') ? null : name);
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -925,7 +933,7 @@ class _LibraryScreenState extends State<LibraryScreen>
           color: selected
               ? AppTokens.gold.withValues(alpha: 0.12)
               : AppTokens.fieldBg,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppTokens.rPill),
           border: Border.all(
             color: selected
                 ? AppTokens.gold.withValues(alpha: 0.3)
@@ -945,8 +953,8 @@ class _LibraryScreenState extends State<LibraryScreen>
             Text(
               '$name $count',
               style: GoogleFonts.plusJakartaSans(
-                color: selected ? AppTokens.gold : const Color(0xFF9B9BA8),
-                fontSize: 12,
+                color: selected ? AppTokens.gold : AppTokens.textMuted,
+                fontSize: 12.5,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -973,7 +981,7 @@ class _LibraryScreenState extends State<LibraryScreen>
         margin: const EdgeInsets.only(bottom: 14),
         decoration: BoxDecoration(
           color: AppTokens.danger.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppTokens.rInput),
         ),
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 28),
@@ -1023,12 +1031,14 @@ class _LibraryScreenState extends State<LibraryScreen>
                           Container(
                             margin: const EdgeInsets.only(left: 8),
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 5,
-                              vertical: 2,
+                              horizontal: 6,
+                              vertical: 3,
                             ),
                             decoration: BoxDecoration(
                               color: AppTokens.warning.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: BorderRadius.circular(
+                                AppTokens.rSmallPill,
+                              ),
                             ),
                             child: Text(
                               'PROMO',
@@ -1058,7 +1068,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                           app.category,
                           style: GoogleFonts.plusJakartaSans(
                             color: AppTokens.textMuted,
-                            fontSize: 11.5,
+                            fontSize: 11,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -1080,7 +1090,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                             'Renews in $days day${days == 1 ? '' : 's'}',
                             style: GoogleFonts.plusJakartaSans(
                               color: urg?.fg,
-                              fontSize: 10.5,
+                              fontSize: 11,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -1106,23 +1116,26 @@ class _LibraryScreenState extends State<LibraryScreen>
                             if (ok == true) _refresh();
                           });
                         },
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.warning_amber_rounded,
-                              size: 11,
-                              color: AppTokens.gold,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Tap to set billing date',
-                              style: GoogleFonts.plusJakartaSans(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                size: 11,
                                 color: AppTokens.gold,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w600,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 4),
+                              Text(
+                                'Tap to set billing date',
+                                style: GoogleFonts.plusJakartaSans(
+                                  color: AppTokens.gold,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -1171,7 +1184,7 @@ class _LibraryScreenState extends State<LibraryScreen>
       return Hero(
         tag: 'logo-${app.id}',
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppTokens.rAvatar),
           child: Image.memory(
             iconBytes,
             width: 44,
@@ -1192,7 +1205,7 @@ class _LibraryScreenState extends State<LibraryScreen>
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppTokens.rAvatar),
         ),
         child: Center(
           child: Text(
@@ -1215,10 +1228,10 @@ class _LibraryScreenState extends State<LibraryScreen>
       child: Container(
         decoration: BoxDecoration(
           color: AppTokens.cardBg,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppTokens.rInput),
           border: Border.all(color: AppTokens.hairline),
         ),
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(AppTokens.padCard),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1265,7 +1278,7 @@ class _LibraryScreenState extends State<LibraryScreen>
               app.category,
               style: GoogleFonts.plusJakartaSans(
                 color: AppTokens.textMuted,
-                fontSize: 10.5,
+                fontSize: 11,
               ),
             ),
           ],
@@ -1329,8 +1342,14 @@ class _DashboardView extends StatelessWidget {
     final otherInsights = insights
         .where((i) => i.id != 'health_score')
         .toList();
-    final cliff = analytics.getPromoCliff(apps);
     final coming = analytics.getComingUp(apps);
+    final promoEntries = coming
+        .where((e) => e['label'] == 'Promo ends')
+        .toList();
+    final promoTotal = promoEntries.fold<double>(
+      0,
+      (s, e) => s + (e['amount'] as double),
+    );
     final savings = analytics.getActivePromoSavings(apps);
 
     return ListView(
@@ -1395,104 +1414,7 @@ class _DashboardView extends StatelessWidget {
         ),
         const SizedBox(height: 16),
 
-        // D1: Price-cliff alert card
-        if (cliff.isNotEmpty) ...[
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppTokens.gold.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppTokens.gold.withValues(alpha: 0.2)),
-            ),
-            child: Column(
-              children: [
-                GestureDetector(
-                  onTap: onToggleCliff,
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.trending_up_rounded,
-                        color: AppTokens.gold,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          '${cliff.length} promo(s) ending soon — spend rises ${_fmt.format(analytics.getPromoCliffTotal(apps))}/mo',
-                          style: GoogleFonts.plusJakartaSans(
-                            color: AppTokens.gold,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      Icon(
-                        cliffExpanded
-                            ? Icons.expand_less_rounded
-                            : Icons.expand_more_rounded,
-                        color: AppTokens.textMuted,
-                        size: 18,
-                      ),
-                    ],
-                  ),
-                ),
-                if (cliffExpanded) ...[
-                  const SizedBox(height: 10),
-                  ...cliff.map(
-                    (c) => GestureDetector(
-                      onTap: () {
-                        onEdit(c.app);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    c.app.name,
-                                    style: GoogleFonts.plusJakartaSans(
-                                      color: AppTokens.textPrimary,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  Text(
-                                    'Ends ${_dateFmt.format(c.app.promotionEndsDate!)}',
-                                    style: GoogleFonts.plusJakartaSans(
-                                      color: AppTokens.textMuted,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Text(
-                              '${_fmt.format(c.oldCost)} → ${_fmt.format(c.newCost)}',
-                              style: GoogleFonts.spaceGrotesk(
-                                color: AppTokens.warning,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-        ],
-
-        // D2: Coming-up timeline
+        // Coming Up: merged near-term timeline + promo-cliff summary
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -1511,6 +1433,17 @@ class _DashboardView extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                 ),
               ),
+              if (promoEntries.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '${promoEntries.length} promo(s) ending — spend rises ${_fmt.format(promoTotal)}/mo',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppTokens.gold,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               if (coming.isEmpty)
                 Row(
@@ -1532,7 +1465,7 @@ class _DashboardView extends StatelessWidget {
                   ],
                 )
               else ...[
-                ...coming.take(cliffExpanded ? coming.length : 8).map((e) {
+                ...coming.take(cliffExpanded ? coming.length : 4).map((e) {
                   final d = e['date'] as DateTime;
                   final days = d.difference(DateTime.now()).inDays;
                   final urg = AppTokens.urgency(days);
@@ -1593,13 +1526,13 @@ class _DashboardView extends StatelessWidget {
                     ),
                   );
                 }),
-                if (coming.length > 8 && !cliffExpanded)
+                if (coming.length > 4 && !cliffExpanded)
                   GestureDetector(
                     onTap: onToggleCliff,
                     child: Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        '+${coming.length - 8} more',
+                        '+${coming.length - 4} more',
                         style: GoogleFonts.plusJakartaSans(
                           color: AppTokens.brandEnd,
                           fontSize: 12,
@@ -1614,31 +1547,29 @@ class _DashboardView extends StatelessWidget {
         ),
         const SizedBox(height: 14),
 
-        // D3: Savings tally
+        // Savings tally
         if (savings > 0) ...[
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: AppTokens.success.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: AppTokens.success.withValues(alpha: 0.15),
               ),
             ),
             child: Row(
               children: [
-                const Icon(
-                  Icons.savings_rounded,
-                  color: AppTokens.success,
-                  size: 16,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Saving ${_fmt.format(savings)}/mo across ${analytics.getActivePromoCount(apps)} promo(s)',
-                  style: GoogleFonts.plusJakartaSans(
-                    color: AppTokens.success,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
+                _iconBadge(Icons.savings_rounded, AppTokens.success),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Saving ${_fmt.format(savings)}/mo across ${analytics.getActivePromoCount(apps)} promo(s)',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: AppTokens.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -1647,121 +1578,147 @@ class _DashboardView extends StatelessWidget {
           const SizedBox(height: 14),
         ],
 
-        // 4 metric cards
-        GridView(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 1.35,
+        // Compact stat row: one hero number, 3 secondary stats
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppTokens.cardBg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppTokens.hairline),
           ),
-          children: [
-            _metric(
-              'Monthly Total',
-              _fmt.format(monthly),
-              'This month',
-              Icons.payments_rounded,
-              AppTokens.brandEnd,
-            ),
-            _metric(
-              'Avg / App',
-              _fmt.format(avg),
-              'Per subscription',
-              Icons.tag_rounded,
-              const Color(0xFF06B6D4),
-            ),
-            _metric(
-              'Active Subs',
-              '$active',
-              'Subscriptions',
-              Icons.apps_rounded,
-              AppTokens.success,
-            ),
-            _metric(
-              'Yearly Proj.',
-              _fmt.format(yearly),
-              'Projected / yr',
-              Icons.calendar_month_rounded,
-              AppTokens.warning,
-            ),
-          ],
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 4,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'MONTHLY TOTAL',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: AppTokens.textFaint,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _fmt.format(monthly),
+                        maxLines: 1,
+                        style: GoogleFonts.spaceGrotesk(
+                          color: AppTokens.textPrimary,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.5,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 1,
+                height: 62,
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                color: AppTokens.hairline,
+              ),
+              Expanded(
+                flex: 5,
+                child: Column(
+                  children: [
+                    _statRow('Avg / app', _fmt.format(avg)),
+                    const SizedBox(height: 8),
+                    _statRow('Active subs', '$active'),
+                    const SizedBox(height: 8),
+                    _statRow('Yearly proj.', _fmt.format(yearly)),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 14),
 
-        // Insights
+        // Smart Insights + Health score, unified in one panel
         if (insights.isNotEmpty) ...[
-          Text(
-            'Smart Insights',
-            style: GoogleFonts.plusJakartaSans(
-              color: AppTokens.textPrimary,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTokens.cardBg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTokens.hairline),
             ),
-          ),
-          const SizedBox(height: 12),
-          ...otherInsights
-              .take(3)
-              .map(
-                (ins) => _insightCard(
-                  ins,
-                  onDismiss: onDismissInsight,
-                  onTap: ins.entryId != null
-                      ? () {
-                          final entry = apps
-                              .where((a) => a.id == ins.entryId)
-                              .firstOrNull;
-                          if (entry != null) onEdit(entry);
-                        }
-                      : null,
-                ),
-              ),
-          if (otherInsights.length > 3 && !insightsExpanded)
-            GestureDetector(
-              onTap: onToggleInsights,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 4, bottom: 8),
-                child: Text(
-                  'Show all (${otherInsights.length})',
-                  style: GoogleFonts.plusJakartaSans(
-                    color: AppTokens.brandEnd,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          if (insightsExpanded)
-            ...otherInsights
-                .skip(3)
-                .map(
-                  (ins) => _insightCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ...healthInsight.map(
+                  (ins) => _insightRow(
                     ins,
                     onDismiss: onDismissInsight,
-                    onTap: ins.entryId != null
-                        ? () {
-                            final entry = apps
-                                .where((a) => a.id == ins.entryId)
-                                .firstOrNull;
-                            if (entry != null) onEdit(entry);
-                          }
-                        : null,
+                    showFactors: true,
                   ),
                 ),
-          const SizedBox(height: 10),
-          ...healthInsight.map(
-            (ins) => _insightCard(
-              ins,
-              onDismiss: onDismissInsight,
-              showFactors: true,
+                if (otherInsights.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Container(height: 1, color: AppTokens.hairline),
+                  ),
+                  GestureDetector(
+                    onTap: onToggleInsights,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Smart Insights (${otherInsights.length})',
+                            style: GoogleFonts.plusJakartaSans(
+                              color: AppTokens.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          insightsExpanded
+                              ? Icons.expand_less_rounded
+                              : Icons.expand_more_rounded,
+                          color: AppTokens.textMuted,
+                          size: 18,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (insightsExpanded) ...[
+                    const SizedBox(height: 10),
+                    ...otherInsights.map(
+                      (ins) => _insightRow(
+                        ins,
+                        onDismiss: onDismissInsight,
+                        onTap: ins.entryId != null
+                            ? () {
+                                final entry = apps
+                                    .where((a) => a.id == ins.entryId)
+                                    .firstOrNull;
+                                if (entry != null) onEdit(entry);
+                              }
+                            : null,
+                      ),
+                    ),
+                  ],
+                ],
+              ],
             ),
           ),
+          const SizedBox(height: 14),
         ],
 
-        // O5: Savings Offers dashboard entry
-        if (offersEnabled && matchedOffers.isNotEmpty) ...[
-          const SizedBox(height: 14),
+        // Savings Offers dashboard entry
+        if (offersEnabled && matchedOffers.isNotEmpty)
           GestureDetector(
             onTap: onOpenOffers,
             child: Container(
@@ -1775,8 +1732,8 @@ class _DashboardView extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  const Text('💡', style: TextStyle(fontSize: 20)),
-                  const SizedBox(width: 10),
+                  _iconBadge(Icons.local_offer_rounded, AppTokens.brandEnd),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       '${matchedOffers.length} ways to save — up to ${_fmt.format(matchedOffers.first.savingsOverPromo)} over the promo period',
@@ -1796,124 +1753,108 @@ class _DashboardView extends StatelessWidget {
               ),
             ),
           ),
-        ],
       ],
     );
   }
 
-  Widget _metric(String t, String v, String l, IconData i, Color a) =>
+  /// Small colored icon in a rounded-square badge — the shared accent
+  /// treatment for every single-message card on the dashboard.
+  Widget _iconBadge(IconData icon, Color color, {double size = 32}) =>
       Container(
+        width: size,
+        height: size,
         decoration: BoxDecoration(
-          color: AppTokens.cardBg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppTokens.hairline),
+          color: color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(size * 0.3),
         ),
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: a.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(i, color: a, size: 16),
-            ),
-            const Spacer(),
-            Text(
-              v,
-              style: GoogleFonts.spaceGrotesk(
-                color: AppTokens.textPrimary,
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              l,
-              style: GoogleFonts.plusJakartaSans(
-                color: AppTokens.textMuted,
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
+        child: Icon(icon, color: color, size: size * 0.5),
       );
 
-  Widget _insightCard(
+  Widget _statRow(String label, String value) => Row(
+    children: [
+      Expanded(
+        child: Text(
+          label,
+          style: GoogleFonts.plusJakartaSans(
+            color: AppTokens.textMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+      Text(
+        value,
+        style: GoogleFonts.spaceGrotesk(
+          color: AppTokens.textPrimary,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+    ],
+  );
+
+  IconData _insightIcon(InsightType type) => switch (type) {
+    InsightType.success => Icons.check_circle_rounded,
+    InsightType.danger => Icons.error_rounded,
+    InsightType.warning => Icons.warning_amber_rounded,
+    InsightType.info => Icons.info_rounded,
+  };
+
+  /// One insight rendered as a row inside the shared Smart Insights panel
+  /// (no per-row border/background — the panel itself provides that).
+  Widget _insightRow(
     SubscriptionInsight ins, {
     required void Function(String) onDismiss,
     VoidCallback? onTap,
     bool showFactors = false,
   }) {
-    Color bg;
-    Color fg;
-    switch (ins.type) {
-      case InsightType.danger:
-        bg = AppTokens.danger.withValues(alpha: 0.08);
-        fg = AppTokens.danger;
-      case InsightType.success:
-        bg = AppTokens.success.withValues(alpha: 0.08);
-        fg = AppTokens.success;
-      case InsightType.warning:
-        bg = AppTokens.warning.withValues(alpha: 0.08);
-        fg = AppTokens.warning;
-      case InsightType.info:
-        bg = AppTokens.brandEnd.withValues(alpha: 0.06);
-        fg = AppTokens.brandEnd;
-    }
+    final fg = switch (ins.type) {
+      InsightType.danger => AppTokens.danger,
+      InsightType.success => AppTokens.success,
+      InsightType.warning => AppTokens.warning,
+      InsightType.info => AppTokens.brandEnd,
+    };
+    final isHealthScore = showFactors && ins.id == 'health_score';
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 12),
       child: GestureDetector(
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: fg.withValues(alpha: 0.15)),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: fg.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  ins.type == InsightType.success
-                      ? Icons.check_circle_rounded
-                      : ins.type == InsightType.danger
-                      ? Icons.error_rounded
-                      : ins.type == InsightType.warning
-                      ? Icons.warning_amber_rounded
-                      : Icons.info_rounded,
-                  size: 16,
-                  color: fg,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      ins.title,
-                      style: GoogleFonts.plusJakartaSans(
-                        color: AppTokens.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _iconBadge(_insightIcon(ins.type), fg, size: 30),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    ins.title,
+                    style: GoogleFonts.plusJakartaSans(
+                      color: AppTokens.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
-                    const SizedBox(height: 3),
+                  ),
+                  const SizedBox(height: 3),
+                  if (isHealthScore)
+                    ...ins.message
+                        .split('\n')
+                        .map(
+                          (line) => Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: Text(
+                              line,
+                              style: GoogleFonts.plusJakartaSans(
+                                color: AppTokens.textMuted,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        )
+                  else
                     Text(
                       ins.message,
                       style: GoogleFonts.plusJakartaSans(
@@ -1922,40 +1863,21 @@ class _DashboardView extends StatelessWidget {
                         fontWeight: FontWeight.w400,
                       ),
                     ),
-                    if (showFactors && ins.id == 'health_score') ...[
-                      const SizedBox(height: 8),
-                      ...ins.message
-                          .split('\n')
-                          .map(
-                            (line) => Padding(
-                              padding: const EdgeInsets.only(bottom: 2),
-                              child: Text(
-                                line,
-                                style: GoogleFonts.plusJakartaSans(
-                                  color: AppTokens.textMuted,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ),
-                    ],
-                  ],
+                ],
+              ),
+            ),
+            GestureDetector(
+              onTap: () => onDismiss(ins.id),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 16,
+                  color: AppTokens.textFaint,
                 ),
               ),
-              GestureDetector(
-                onTap: () => onDismiss(ins.id),
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Icon(
-                    Icons.close_rounded,
-                    size: 16,
-                    color: AppTokens.textFaint,
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

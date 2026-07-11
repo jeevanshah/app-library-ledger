@@ -81,31 +81,6 @@ class AnalyticsService {
   int getActiveSubscriptionCount(List<AppEntry> apps) =>
       apps.where((a) => a.isActiveSubscription).length;
 
-  int getUpcomingRenewalsCount(List<AppEntry> apps, {int days = 7}) {
-    final n = DateTime.now(), c = n.add(Duration(days: days));
-    return apps
-        .where(
-          (a) =>
-              a.isActiveSubscription &&
-              a.nextRenewalDate != null &&
-              a.nextRenewalDate!.isAfter(n) &&
-              a.nextRenewalDate!.isBefore(c),
-        )
-        .length;
-  }
-
-  double getUpcomingRenewalsCost(List<AppEntry> apps, {int days = 7}) {
-    final n = DateTime.now(), c = n.add(Duration(days: days));
-    return apps
-        .where((a) {
-          if (!a.isActiveSubscription || a.nextRenewalDate == null)
-            return false;
-          return a.nextRenewalDate!.isAfter(n) &&
-              a.nextRenewalDate!.isBefore(c);
-        })
-        .fold(0.0, (s, a) => s + _monthly(a));
-  }
-
   // ── D1: Promo cliff ──────────────────────────────────────────
 
   List<PromoCliffEntry> getPromoCliff(List<AppEntry> apps) {
@@ -338,57 +313,10 @@ class AnalyticsService {
       }
     }
 
-    // e) Aggregate promo cliff
-    final cliff = getPromoCliffTotal(apps);
-    if (cliff > 0) {
-      all.add(
-        SubscriptionInsight(
-          id: 'promo_cliff_agg',
-          title: '${_fmt.format(cliff)}/mo in price increases coming',
-          message: 'Promo prices ending within 60 days',
-          type: cliff > 10 ? InsightType.danger : InsightType.warning,
-          impactPerMonth: cliff,
-        ),
-      );
-    }
-
-    // Renewal cluster (keep existing)
-    final uc = getUpcomingRenewalsCount(apps);
-    if (uc > 0) {
-      final uCost = getUpcomingRenewalsCost(apps);
-      all.add(
-        SubscriptionInsight(
-          id: 'renewal_cluster',
-          title: '$uc renewal(s) in the next 7 days',
-          message: 'Total: ${_fmt.format(uCost)}',
-          type: InsightType.warning,
-          impactPerMonth: uCost,
-        ),
-      );
-    }
-
-    // Per-promo expiry (keep)
-    for (final a in apps.where(
-      (a) =>
-          a.isPromotionalPrice &&
-          a.promotionEndsDate != null &&
-          a.promotionEndsDate!.isAfter(n),
-    )) {
-      final dl = a.promotionEndsDate!.difference(n).inDays;
-      if (dl <= 30) {
-        all.add(
-          SubscriptionInsight(
-            id: 'promo_expiry_${a.id}',
-            title: '${a.name} promo ends in $dl days',
-            message:
-                'Price goes from ${_fmt.format(a.subscriptionCost ?? 0)} to ${_fmt.format(a.regularPrice ?? 0)}',
-            type: dl <= 7 ? InsightType.danger : InsightType.warning,
-            impactPerMonth: (a.regularPrice != null ? _monthly(a) : 0),
-            entryId: a.id,
-          ),
-        );
-      }
-    }
+    // Note: aggregate/per-promo cliff and renewal-cluster insights were
+    // removed here — they duplicated exactly what the dashboard's merged
+    // "Coming Up" section already shows chronologically. Insights now
+    // focus on spend-pattern analysis, not date-driven reminders.
 
     // Filter dismissed (30 day TTL)
     all.removeWhere((ins) {

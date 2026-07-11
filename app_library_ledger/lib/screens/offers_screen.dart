@@ -15,6 +15,16 @@ import 'add_app_screen.dart';
 final _fmt = NumberFormat.currency(locale: 'en_US', symbol: '\$', decimalDigits: 2);
 final _dateFmt = DateFormat('MMM d');
 
+Future<void> _openOfferUrl(BuildContext context, String url) async {
+  bool launched = false;
+  try {
+    launched = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  } catch (_) {}
+  if (!launched && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't open that link.")));
+  }
+}
+
 class OffersScreen extends StatefulWidget {
   final List<AppEntry> apps;
   final VoidCallback onSaveApp;
@@ -81,6 +91,7 @@ class _OffersScreenState extends State<OffersScreen> {
   Future<void> _loadNotSure() async {
     final prefs = await SharedPreferences.getInstance();
     _anchorNotSure = prefs.getBool(_notSureKey) ?? false;
+    if (mounted) setState(() {});
   }
 
   Future<void> _setNotSure() async {
@@ -117,20 +128,30 @@ class _OffersScreenState extends State<OffersScreen> {
       final all = await OffersService().fetch(enabled: true, force: true);
       _allOffers = all;
       _loadAnchor();
+      if (_filterTier != null && !_availableTiers.contains(_filterTier)) {
+        _resetTierFilter();
+      }
       if (mounted) setState(() {});
     } catch (_) {}
   }
 
+  void _resetTierFilter() {
+    final tiers = _availableTiers;
+    _filterTier = tiers.isNotEmpty ? tiers.first : null;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _pageCtrl.jumpToPage(0));
+  }
+
   void _loadAnchor([List<AppEntry>? apps]) {
-    final utils = (apps ?? widget.apps).where((a) => a.category == 'Utilities' && a.isActiveSubscription).toList();
-    // 1. Explicit serviceType match for current segment
+    final active = (apps ?? widget.apps).where((a) => a.isActiveSubscription).toList();
+    final utils = active.where((a) => a.category == 'Utilities').toList();
+    // 1. Explicit serviceType match (user-confirmed tag) — any category, since tagging is deliberate
     if (_segment == 'nbn' || _segment == 'mobile') {
-      final explicit = utils.where((a) => a.serviceType == _segment).firstOrNull;
+      final explicit = active.where((a) => a.serviceType == _segment).firstOrNull;
       if (explicit != null) { _anchorEntry = explicit; return; }
     }
     // 2. Segment-aware keyword matching
-    const nbnKws = ['nbn','internet','broadband','tangerine','superloop','dodo','belong','flip','exetel','iinet','tpg'];
-    const mobileKws = ['mobile','sim','prepaid','spintel','telstra','optus','vodafone','amaysim','felix','kogan','boost','aldi','lebrara'];
+    const nbnKws = ['nbn','internet','broadband','tangerine','superloop','dodo','belong','flip','exetel','iinet','tpg','telstra','optus','vodafone','spintel'];
+    const mobileKws = ['mobile','sim','prepaid','spintel','telstra','optus','vodafone','amaysim','felix','kogan','boost','aldi','lebara'];
     if (_segment == 'nbn' || _segment == null) {
       for (final kw in nbnKws) {
         final m = utils.where((a) => a.name.toLowerCase().contains(kw)).firstOrNull;
@@ -158,6 +179,7 @@ class _OffersScreenState extends State<OffersScreen> {
     final updated = _anchorEntry!.copyWith(serviceTier: tier);
     await StorageService().saveApp(updated);
     widget.onSaveApp();
+    if (!mounted) return;
     setState(() { _anchorEntry = updated; _filterTier = tier; });
   }
 
@@ -184,7 +206,7 @@ class _OffersScreenState extends State<OffersScreen> {
   }
 
   List<String> get _tierPickerOptions {
-    if (_segment == 'nbn') return const ['25', '50', '100', 'Faster'];
+    if (_segment == 'nbn') return const ['NBN 25', 'NBN 50', 'NBN 100', 'NBN 500'];
     if (_segment == 'mobile') return const ['<20GB', '20–60GB', '60GB+', 'Unlimited'];
     return const [];
   }
@@ -257,8 +279,8 @@ class _OffersScreenState extends State<OffersScreen> {
     return RefreshIndicator(
       color: AppTokens.gold, backgroundColor: AppTokens.cardBg, onRefresh: _refresh,
       child: CustomScrollView(slivers: [
-        SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(22, 12, 22, 0), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
+        SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(AppTokens.padHeader, 12, AppTokens.padHeader, 0), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
             Expanded(child: Text('Offers', style: GoogleFonts.playfairDisplay(color: AppTokens.textStrong, fontSize: 28, fontWeight: FontWeight.w700))),
             Text('$totalOffers plans', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
           ]),
@@ -268,9 +290,9 @@ class _OffersScreenState extends State<OffersScreen> {
           _buildSegmentControl(),
           const SizedBox(height: 12),
           _buildAnchorBar(),
-          if (_showTierPicker) ...[const SizedBox(height: 10), _buildTierPickerCard(), const SizedBox(height: 10)],
+          if (_showTierPicker) ...[const SizedBox(height: AppTokens.gapItem), _buildTierPickerCard(), const SizedBox(height: AppTokens.gapItem)],
         ]))),
-        SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 22), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(horizontal: AppTokens.padHeader), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const SizedBox(height: 12),
           _buildFilterRow(tiers),
           if (tiers.isNotEmpty) const SizedBox(height: 8),
@@ -315,7 +337,7 @@ class _OffersScreenState extends State<OffersScreen> {
       default: offers.sort((a, b) => a.avgFirstYear.compareTo(b.avgFirstYear));
     }
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(22, 0, 22, 80),
+      padding: const EdgeInsets.fromLTRB(AppTokens.padHeader, 0, AppTokens.padHeader, 80),
       itemCount: offers.isEmpty ? 1 : offers.length + 1,
       itemBuilder: (_, i) {
         if (offers.isEmpty) {
@@ -323,12 +345,12 @@ class _OffersScreenState extends State<OffersScreen> {
         }
         if (i == offers.length) {
           return Padding(padding: const EdgeInsets.only(top: 16), child: Column(children: [
-            Text('NBN availability varies by address — check with the provider.', textAlign: TextAlign.center, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPlaceholder, fontSize: 10.5)),
+            Text('NBN availability varies by address — check with the provider.', textAlign: TextAlign.center, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPlaceholder, fontSize: 11)),
             const SizedBox(height: 4),
-            Text('Prices verified at time of listing. Always confirm with the provider.', textAlign: TextAlign.center, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPlaceholder, fontSize: 10.5)),
+            Text('Prices verified at time of listing. Always confirm with the provider.', textAlign: TextAlign.center, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPlaceholder, fontSize: 11)),
           ]));
         }
-        return Padding(padding: const EdgeInsets.only(bottom: 14), child: _OfferCard(
+        return Padding(padding: const EdgeInsets.only(bottom: AppTokens.gapItem), child: _OfferCard(
           offer: offers[i], now: DateTime.now(),
           anchor: _anchorEntry, anchorNotSure: _anchorNotSure,
           onTap: () => _showDetail(offers[i]),
@@ -344,7 +366,7 @@ class _OffersScreenState extends State<OffersScreen> {
     if (_segment == null && segs.isNotEmpty) _segment = segs.first;
     return Container(padding: const EdgeInsets.all(3), decoration: BoxDecoration(color: AppTokens.fieldBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppTokens.hairline)),
       child: Row(children: segs.map((s) => Expanded(child: GestureDetector(
-        onTap: () => setState(() { _segment = _segment == s ? null : s; _filterTier = _availableTiers.isNotEmpty ? _availableTiers.first : null; _loadAnchor(); WidgetsBinding.instance.addPostFrameCallback((_) => _pageCtrl.jumpToPage(0)); }),
+        onTap: () => setState(() { _segment = _segment == s ? null : s; _loadAnchor(); _resetTierFilter(); }),
         child: AnimatedContainer(duration: const Duration(milliseconds: 200), padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(color: _segment == s ? AppTokens.gold : Colors.transparent, borderRadius: BorderRadius.circular(7)),
           child: Text(s == 'nbn' ? 'NBN' : 'Mobile', textAlign: TextAlign.center,
@@ -358,24 +380,34 @@ class _OffersScreenState extends State<OffersScreen> {
     final hasEntry = _anchorEntry != null;
     final hasTier = hasEntry && _anchorEntry!.serviceTier != null;
     final hasUtilities = widget.apps.any((a) => a.category == 'Utilities' && a.isActiveSubscription);
-    return Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(color: AppTokens.cardBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppTokens.gold.withValues(alpha: 0.5))),
+    final hasPromoCliff = hasEntry && _anchorEntry!.isPromotionalPrice && _anchorEntry!.promotionEndsDate != null;
+    final daysToCliff = hasPromoCliff ? _anchorEntry!.promotionEndsDate!.difference(DateTime.now()).inDays : null;
+    final cliffUrgent = daysToCliff != null && daysToCliff <= 7;
+    return Container(padding: const EdgeInsets.symmetric(horizontal: AppTokens.padCard, vertical: 9),
+      decoration: BoxDecoration(color: AppTokens.cardBg, borderRadius: BorderRadius.circular(AppTokens.rInput), border: Border.all(color: AppTokens.gold.withValues(alpha: 0.5))),
       child: Row(children: [
         Expanded(child: hasEntry
-          ? Text.rich(TextSpan(children: [
-              TextSpan(text: 'You pay ', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12)),
-              TextSpan(text: _fmt.format(_anchorEntry!.subscriptionCost ?? 0), style: GoogleFonts.spaceGrotesk(color: AppTokens.gold, fontSize: 12, fontWeight: FontWeight.w500, fontFeatures: const [FontFeature.tabularFigures()])),
-              TextSpan(text: '/mo', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12)),
-              if (hasTier) TextSpan(text: ' · ${_anchorEntry!.serviceTier}', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12)),
-            ]))
+          ? Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              Text.rich(TextSpan(children: [
+                TextSpan(text: 'You pay ', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5)),
+                TextSpan(text: _fmt.format(_anchorEntry!.subscriptionCost ?? 0), style: GoogleFonts.spaceGrotesk(color: AppTokens.gold, fontSize: 12.5, fontWeight: FontWeight.w500, fontFeatures: const [FontFeature.tabularFigures()])),
+                TextSpan(text: '/mo', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5)),
+                if (hasTier) TextSpan(text: ' · ${_anchorEntry!.serviceTier}', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5)),
+              ])),
+              if (hasPromoCliff)
+                Padding(padding: const EdgeInsets.only(top: 2), child: Text(
+                  'Promo ends ${_dateFmt.format(_anchorEntry!.promotionEndsDate!)}${_anchorEntry!.regularPrice != null ? ' — then ${_fmt.format(_anchorEntry!.regularPrice!)}/mo' : ''}',
+                  style: GoogleFonts.plusJakartaSans(color: cliffUrgent ? AppTokens.warning : AppTokens.textFaint, fontSize: 10.5, fontWeight: cliffUrgent ? FontWeight.w500 : FontWeight.w400),
+                )),
+            ])
           : hasUtilities
-            ? Text('Tap to pick your plan', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12))
-            : Text(_segment == 'mobile' ? 'Add your mobile plan' : 'Add your internet plan', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12)),
+            ? Text('Tap to pick your plan', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5))
+            : Text(_segment == 'mobile' ? 'Add your mobile plan' : 'Add your internet plan', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5)),
         ),
         GestureDetector(
           onTap: () => hasEntry ? _showAnchorConfig() : hasUtilities ? _showAnchorPicker() : _navigateToAdd(),
           child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), decoration: BoxDecoration(border: Border.all(color: AppTokens.hairlineStrong), borderRadius: BorderRadius.circular(8)),
-            child: Text(hasEntry ? 'Edit' : hasUtilities ? 'Pick' : 'Add', style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12, fontWeight: FontWeight.w500)),
+            child: Text(hasEntry ? 'Edit' : hasUtilities ? 'Pick' : 'Add', style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w500)),
           ),
         ),
       ]),
@@ -390,24 +422,24 @@ class _OffersScreenState extends State<OffersScreen> {
       builder: (_) => SafeArea(child: Padding(padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('Which plan is your $label?', style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
         const SizedBox(height: 4),
-        Text('Tap an existing subscription to tag it as $label', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12)),
+        Text('Tap an existing subscription to tag it as $label', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5)),
         const SizedBox(height: 16),
         if (entries.isNotEmpty) SizedBox(
           height: entries.length * 56.0 + 8 > 360 ? 360 : entries.length * 56.0 + 8,
           child: ListView(children: entries.map((a) => ListTile(
             contentPadding: EdgeInsets.zero,
-            title: Text(a.name, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 13, fontWeight: FontWeight.w500)),
+            title: Text(a.name, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w500)),
             subtitle: Text('${_fmt.format(a.subscriptionCost ?? 0)}/mo · ${a.category}', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
             trailing: a.serviceType != null ? Text(a.serviceType == 'nbn' ? 'NBN' : 'Mobile', style: GoogleFonts.plusJakartaSans(color: AppTokens.textFaint, fontSize: 11)) : const Icon(Icons.chevron_right_rounded, color: AppTokens.textMuted, size: 20),
             onTap: a.serviceType != null ? null : () { Navigator.pop(context); _tagAsAnchor(a); },
           )).toList()),
         ),
-        if (entries.isEmpty) Padding(padding: const EdgeInsets.only(bottom: 16), child: Text('No active subscriptions yet.', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12))),
+        if (entries.isEmpty) Padding(padding: const EdgeInsets.only(bottom: 16), child: Text('No active subscriptions yet.', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5))),
         const Divider(color: AppTokens.hairlineStrong),
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.add_rounded, color: AppTokens.gold, size: 22),
-          title: Text('Add new subscription', style: GoogleFonts.plusJakartaSans(color: AppTokens.gold, fontSize: 13, fontWeight: FontWeight.w600)),
+          title: Text('Add new subscription', style: GoogleFonts.plusJakartaSans(color: AppTokens.gold, fontSize: 12.5, fontWeight: FontWeight.w600)),
           onTap: () { Navigator.pop(context); _navigateToAdd(); },
         ),
       ]))),
@@ -418,11 +450,15 @@ class _OffersScreenState extends State<OffersScreen> {
     final cats = await StorageService().getCategories();
     if (!mounted) return;
     final segment = _segment ?? 'nbn';
+    final previous = _anchorEntry;
     final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => AddAppScreen(
       categories: cats,
       prefillServiceType: segment,
     )));
     if (result == true) {
+      if (previous != null && previous.serviceType == segment) {
+        await StorageService().saveApp(previous.copyWith(serviceType: null));
+      }
       widget.onSaveApp();
       final freshApps = await StorageService().getApps();
       if (mounted) { _loadAnchor(freshApps); setState(() {}); }
@@ -430,8 +466,12 @@ class _OffersScreenState extends State<OffersScreen> {
   }
 
   Future<void> _tagAsAnchor(AppEntry entry) async {
+    final previous = _anchorEntry;
     final updated = entry.copyWith(serviceType: _segment);
     await StorageService().saveApp(updated);
+    if (previous != null && previous.id != entry.id && previous.serviceType == _segment) {
+      await StorageService().saveApp(previous.copyWith(serviceType: null));
+    }
     widget.onSaveApp();
     final freshApps = await StorageService().getApps();
     if (mounted) { _loadAnchor(freshApps); setState(() {}); }
@@ -446,28 +486,28 @@ class _OffersScreenState extends State<OffersScreen> {
       builder: (_) => SafeArea(child: Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 20), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
         Center(child: Container(width: 32, height: 4, decoration: BoxDecoration(color: AppTokens.hairlineStrong, borderRadius: BorderRadius.circular(2)))),
         const SizedBox(height: 12),
-        Row(children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
           Expanded(child: Text('Configure your plan', style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 15, fontWeight: FontWeight.w700))),
-          Text('${_fmt.format(_anchorEntry!.subscriptionCost ?? 0)}/mo', style: GoogleFonts.spaceGrotesk(color: AppTokens.gold, fontSize: 13, fontWeight: FontWeight.w600, fontFeatures: const [FontFeature.tabularFigures()])),
+          Text('${_fmt.format(_anchorEntry!.subscriptionCost ?? 0)}/mo', style: GoogleFonts.spaceGrotesk(color: AppTokens.gold, fontSize: 12.5, fontWeight: FontWeight.w600, fontFeatures: const [FontFeature.tabularFigures()])),
         ]),
         const SizedBox(height: 16),
-        Text(_tierPickerQuestion + ' (optional)', style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12, fontWeight: FontWeight.w600)),
+        Text(_tierPickerQuestion + ' (optional)', style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
         Wrap(spacing: 6, runSpacing: 6, children: [
           for (final t in options)
             GestureDetector(onTap: () { HapticFeedback.selectionClick(); _setAnchorTier(t); Navigator.pop(context); },
-              child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                decoration: BoxDecoration(color: _anchorEntry?.serviceTier == t ? AppTokens.gold.withValues(alpha: 0.12) : AppTokens.fieldBg, borderRadius: BorderRadius.circular(8), border: Border.all(color: _anchorEntry?.serviceTier == t ? AppTokens.gold.withValues(alpha: 0.3) : AppTokens.hairline)),
-                child: Text(t, style: GoogleFonts.plusJakartaSans(color: _anchorEntry?.serviceTier == t ? AppTokens.gold : AppTokens.textPrimary, fontSize: 12, fontWeight: FontWeight.w600)),
+              child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: _anchorEntry?.serviceTier == t ? AppTokens.gold.withValues(alpha: 0.12) : AppTokens.fieldBg, borderRadius: BorderRadius.circular(AppTokens.rPill), border: Border.all(color: _anchorEntry?.serviceTier == t ? AppTokens.gold.withValues(alpha: 0.3) : AppTokens.hairline)),
+                child: Text(t, style: GoogleFonts.plusJakartaSans(color: _anchorEntry?.serviceTier == t ? AppTokens.gold : AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
               ),
             ),
           GestureDetector(onTap: () { HapticFeedback.selectionClick(); _setNotSure(); Navigator.pop(context); },
-            child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7), child: Text('Not sure', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12)))),
+            child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12), child: Text('Not sure', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5)))),
         ]),
-        const SizedBox(height: 14),
+        const SizedBox(height: AppTokens.gapItem),
         const Divider(color: AppTokens.hairlineStrong),
-        const SizedBox(height: 10),
-        Text('Switch to a different plan?', style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12, fontWeight: FontWeight.w600)),
+        const SizedBox(height: AppTokens.gapItem),
+        Text('Switch to a different plan?', style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
         if (entries.isNotEmpty) SizedBox(
           height: entries.length * 52.0 + 8 > 320 ? 320 : entries.length * 52.0 + 8,
@@ -475,19 +515,19 @@ class _OffersScreenState extends State<OffersScreen> {
             contentPadding: EdgeInsets.zero,
             dense: true,
             visualDensity: VisualDensity.compact,
-            title: Text(a.name, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 13, fontWeight: FontWeight.w500)),
+            title: Text(a.name, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w500)),
             subtitle: Text('${_fmt.format(a.subscriptionCost ?? 0)}/mo \u00B7 ${a.category}', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
             trailing: a.id == _anchorEntry!.id ? Text('Current', style: GoogleFonts.plusJakartaSans(color: AppTokens.gold, fontSize: 11, fontWeight: FontWeight.w600)) : a.serviceType != null ? Text(a.serviceType == 'nbn' ? 'NBN' : 'Mobile', style: GoogleFonts.plusJakartaSans(color: AppTokens.textFaint, fontSize: 11)) : null,
             onTap: a.id == _anchorEntry!.id ? null : () { Navigator.pop(context); _tagAsAnchor(a); },
           )).toList()),
         ),
-        if (entries.isEmpty) Padding(padding: const EdgeInsets.only(bottom: 16), child: Text('No active subscriptions yet.', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12))),
+        if (entries.isEmpty) Padding(padding: const EdgeInsets.only(bottom: 16), child: Text('No active subscriptions yet.', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5))),
         const SizedBox(height: 8),
         ListTile(
           contentPadding: EdgeInsets.zero,
           dense: true,
           leading: const Icon(Icons.add_rounded, color: AppTokens.gold, size: 20),
-          title: Text('Add new subscription', style: GoogleFonts.plusJakartaSans(color: AppTokens.gold, fontSize: 12, fontWeight: FontWeight.w600)),
+          title: Text('Add new subscription', style: GoogleFonts.plusJakartaSans(color: AppTokens.gold, fontSize: 12.5, fontWeight: FontWeight.w600)),
           onTap: () { Navigator.pop(context); _navigateToAdd(); },
         ),
       ]))),
@@ -496,20 +536,20 @@ class _OffersScreenState extends State<OffersScreen> {
 
   Widget _buildTierPickerCard() {
     final options = _tierPickerOptions;
-    return Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppTokens.fieldBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppTokens.hairlineStrong)),
+    return Container(padding: const EdgeInsets.all(AppTokens.padCard), decoration: BoxDecoration(color: AppTokens.fieldBg, borderRadius: BorderRadius.circular(AppTokens.rInput), border: Border.all(color: AppTokens.hairlineStrong)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(_tierPickerQuestion + ' (optional)', style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12)),
+        Text(_tierPickerQuestion + ' (optional)', style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12.5)),
         const SizedBox(height: 8),
         Wrap(spacing: 6, runSpacing: 6, children: [
           for (final t in options)
             GestureDetector(onTap: () => _setAnchorTier(t),
               child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(color: AppTokens.cardBg, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppTokens.hairlineStrong)),
-                child: Text(t, style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12, fontWeight: FontWeight.w500)),
+                decoration: BoxDecoration(color: AppTokens.cardBg, borderRadius: BorderRadius.circular(AppTokens.rPill), border: Border.all(color: AppTokens.hairlineStrong)),
+                child: Text(t, style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5, fontWeight: FontWeight.w500)),
               ),
             ),
           GestureDetector(onTap: _setNotSure,
-            child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6), child: Text('Not sure', style: GoogleFonts.plusJakartaSans(color: AppTokens.textFaint, fontSize: 12)))),
+            child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12), child: Text('Not sure', style: GoogleFonts.plusJakartaSans(color: AppTokens.textFaint, fontSize: 12.5)))),
         ]),
       ]),
     );
@@ -518,21 +558,24 @@ class _OffersScreenState extends State<OffersScreen> {
   Widget _buildFilterRow(Set<String> tiers) {
     final myTier = _anchorEntry?.serviceTier;
     final tierList = tiers.toList();
+    final showMyTierChip = myTier != null && tiers.contains(myTier);
     return SizedBox(height: 36, child: ListView(scrollDirection: Axis.horizontal, children: [
-      if (myTier != null && tiers.contains(myTier))
+      if (showMyTierChip)
         Padding(padding: const EdgeInsets.only(right: 6), child: GestureDetector(
           onTap: () { _pageCtrl.animateToPage(tierList.indexOf(myTier), duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic); },
-          child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(color: _filterTier == myTier ? AppTokens.gold : Colors.transparent, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppTokens.gold, width: _filterTier == myTier ? 1 : 1)),
+          child: Container(padding: const EdgeInsets.only(left: 10, right: 12, top: 6, bottom: 6),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: _filterTier == myTier ? AppTokens.gold : Colors.transparent, borderRadius: BorderRadius.circular(AppTokens.rPill), border: Border.all(color: AppTokens.gold, width: _filterTier == myTier ? 1 : 1)),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               Container(width: 6, height: 6, decoration: const BoxDecoration(color: AppTokens.gold, shape: BoxShape.circle)),
-              const SizedBox(width: 6),
-              Text(myTier, style: GoogleFonts.plusJakartaSans(color: _filterTier == myTier ? AppTokens.screenBg : AppTokens.gold, fontSize: 11.5, fontWeight: FontWeight.w500)),
+              const SizedBox(width: 4),
+              Text(myTier, style: GoogleFonts.plusJakartaSans(color: _filterTier == myTier ? AppTokens.screenBg : AppTokens.gold, fontSize: 11, fontWeight: FontWeight.w500)),
             ]),
           ),
         )),
       for (var i = 0; i < tierList.length; i++)
-        Padding(padding: const EdgeInsets.only(right: 6), child: _chip(tierList[i], i)),
+        if (!showMyTierChip || tierList[i] != myTier)
+          Padding(padding: const EdgeInsets.only(right: 6), child: _chip(tierList[i], i)),
     ]));
   }
 
@@ -541,8 +584,9 @@ class _OffersScreenState extends State<OffersScreen> {
     return GestureDetector(
       onTap: () { _pageCtrl.animateToPage(pageIndex, duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic); },
       child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(color: selected ? AppTokens.gold : Colors.transparent, borderRadius: BorderRadius.circular(16), border: Border.all(color: selected ? AppTokens.gold : AppTokens.hairlineStrong)),
-        child: Text(label, style: GoogleFonts.plusJakartaSans(color: selected ? AppTokens.screenBg : AppTokens.textMuted, fontSize: 11.5, fontWeight: FontWeight.w500)),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: selected ? AppTokens.gold : Colors.transparent, borderRadius: BorderRadius.circular(AppTokens.rPill), border: Border.all(color: selected ? AppTokens.gold : AppTokens.hairlineStrong)),
+        child: Text(label, style: GoogleFonts.plusJakartaSans(color: selected ? AppTokens.screenBg : AppTokens.textMuted, fontSize: 11, fontWeight: FontWeight.w500)),
       ),
     );
   }
@@ -599,13 +643,13 @@ class _OffersScreenState extends State<OffersScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: tierMatch ? AppTokens.gold.withValues(alpha: 0.15) : AppTokens.brandStart.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(AppTokens.rSmallPill),
                       ),
                       child: Text(
                         offer.tier!,
                         style: GoogleFonts.plusJakartaSans(
                           color: tierMatch ? AppTokens.goldLight : AppTokens.brandStart,
-                          fontSize: 10.5,
+                          fontSize: 11,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -618,11 +662,11 @@ class _OffersScreenState extends State<OffersScreen> {
                   const SizedBox(height: 6),
                   Text(specParts.join(' \u00B7 '), style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
                 ],
-                const SizedBox(height: 14),
-                Text('PRICE TIMELINE', style: GoogleFonts.plusJakartaSans(color: AppTokens.textFaint, fontSize: 10.5, fontWeight: FontWeight.w600, letterSpacing: 1.5)),
+                const SizedBox(height: AppTokens.gapItem),
+                Text('PRICE TIMELINE', style: GoogleFonts.plusJakartaSans(color: AppTokens.textFaint, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 1.5)),
                 const SizedBox(height: 8),
                 Container(
-                  decoration: BoxDecoration(border: Border.all(color: AppTokens.hairline), borderRadius: BorderRadius.circular(10)),
+                  decoration: BoxDecoration(border: Border.all(color: AppTokens.hairline), borderRadius: BorderRadius.circular(AppTokens.rInput)),
                   child: Column(children: [
                     if (isFlat)
                       _dtlRow('Month 1\u201312', _fmt.format(offer.promoPrice), true)
@@ -642,22 +686,22 @@ class _OffersScreenState extends State<OffersScreen> {
                 const SizedBox(height: 12),
                 if (anchorCost != null && !_anchorNotSure)
                   _dtlRow('Your current plan, same 12 months', _fmt.format(anchorCost * 12), false, muted: true),
-                const SizedBox(height: 14),
+                const SizedBox(height: AppTokens.gapItem),
                 Row(children: [
-                  Expanded(child: Text('Ends ${_dateFmt.format(offer.validUntil)} \u00B7 affiliate', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 10.5))),
+                  Expanded(child: Text('Ends ${_dateFmt.format(offer.validUntil)} \u00B7 affiliate', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11))),
                   const SizedBox(width: 12),
                   SizedBox(
                     height: 44,
                     child: DecoratedBox(
-                      decoration: BoxDecoration(gradient: AppTokens.goldGradient, borderRadius: BorderRadius.circular(12)),
+                      decoration: BoxDecoration(gradient: AppTokens.goldGradient, borderRadius: BorderRadius.circular(AppTokens.rInput)),
                       child: Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () => launchUrl(Uri.parse(offer.url), mode: LaunchMode.externalApplication),
+                          borderRadius: BorderRadius.circular(AppTokens.rInput),
+                          onTap: () => _openOfferUrl(context, offer.url),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                            child: Text('View offer', style: GoogleFonts.plusJakartaSans(color: AppTokens.screenBg, fontSize: 13, fontWeight: FontWeight.w700)),
+                            child: Text('View offer', style: GoogleFonts.plusJakartaSans(color: AppTokens.screenBg, fontSize: 12.5, fontWeight: FontWeight.w700)),
                           ),
                         ),
                       ),
@@ -699,15 +743,15 @@ class _OfferCard extends StatelessWidget {
     final delta = userCost != null ? avg - userCost : null;
     final isFlat = offer.promoMonths <= 0 || offer.promoPrice == offer.regularPrice;
 
-    return GestureDetector(onTap: onTap, child: Container(padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: AppTokens.cardBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppTokens.hairline, width: 1)),
+    return GestureDetector(onTap: onTap, child: Container(padding: const EdgeInsets.all(AppTokens.padCard),
+      decoration: BoxDecoration(color: AppTokens.cardBg, borderRadius: BorderRadius.circular(AppTokens.rInput), border: Border.all(color: AppTokens.hairline, width: 1)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Expanded(child: Text('${offer.provider} \u00B7 ${offer.title}', maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 13, fontWeight: FontWeight.w600))),
+          Expanded(child: Text('${offer.provider} \u00B7 ${offer.title}', maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600))),
           if (offer.tier != null || isNew) const SizedBox(width: 8),
           Flexible(child: Row(mainAxisSize: MainAxisSize.min, children: [
-            if (offer.tier != null) Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: tierMatch ? AppTokens.gold.withValues(alpha: 0.12) : AppTokens.brandStart.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)), child: Text(offer.tier! + (tierMatch ? ' \u00B7 your tier' : ''), style: GoogleFonts.plusJakartaSans(color: tierMatch ? AppTokens.goldLight : AppTokens.brandStart, fontSize: 10.5, fontWeight: FontWeight.w500))),
-            if (isNew) ...[const SizedBox(width: 4), Container(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2), decoration: BoxDecoration(color: AppTokens.success.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)), child: Text('New', style: GoogleFonts.plusJakartaSans(color: AppTokens.success, fontSize: 9, fontWeight: FontWeight.w600)))],
+            if (offer.tier != null) Flexible(child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: tierMatch ? AppTokens.gold.withValues(alpha: 0.12) : AppTokens.brandStart.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(AppTokens.rSmallPill)), child: Text(offer.tier! + (tierMatch ? ' \u00B7 your tier' : ''), maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.plusJakartaSans(color: tierMatch ? AppTokens.goldLight : AppTokens.brandStart, fontSize: 11, fontWeight: FontWeight.w500)))),
+            if (isNew) ...[const SizedBox(width: 4), Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: AppTokens.success.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(AppTokens.rSmallPill)), child: Text('New', style: GoogleFonts.plusJakartaSans(color: AppTokens.success, fontSize: 9, fontWeight: FontWeight.w600)))],
           ])),
         ]),
         const SizedBox(height: 10),
@@ -717,6 +761,10 @@ class _OfferCard extends StatelessWidget {
           const Spacer(),
           if (delta != null && !anchorNotSure) Text(delta == 0 ? '\$0.00 vs yours' : '${delta < 0 ? '\u2212' : '+'}${_fmt.format(delta.abs())}/mo vs yours', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
         ]),
+        if (userCost != null && !anchorNotSure) ...[
+          const SizedBox(height: 6),
+          _comparisonBar(avg, userCost),
+        ],
         const SizedBox(height: 6),
         Text(isFlat ? _fmt.format(offer.regularPrice) + ' flat \u00B7 no intro pricing' : '${_fmt.format(offer.promoPrice)} for ${offer.promoMonths} mo \u00B7 then ${_fmt.format(offer.regularPrice)}/mo', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
         const SizedBox(height: 10),
@@ -724,14 +772,29 @@ class _OfferCard extends StatelessWidget {
           child: Row(children: [
             Expanded(child: Text(isFlat ? 'Ongoing \u00B7 affiliate' : 'Ends ${_dateFmt.format(offer.validUntil)} \u00B7 affiliate', style: GoogleFonts.plusJakartaSans(color: urgent && !isFlat ? AppTokens.warning : AppTokens.textMuted, fontSize: 11, fontWeight: urgent && !isFlat ? FontWeight.w500 : FontWeight.w400))),
             const SizedBox(width: 8),
-            SizedBox(height: 38, child: DecoratedBox(decoration: BoxDecoration(gradient: AppTokens.goldGradient, borderRadius: BorderRadius.circular(10)),
-              child: Material(color: Colors.transparent, child: InkWell(borderRadius: BorderRadius.circular(10),
-                onTap: () { HapticFeedback.selectionClick(); launchUrl(Uri.parse(offer.url), mode: LaunchMode.externalApplication); },
-                child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text('View offer', style: GoogleFonts.plusJakartaSans(color: AppTokens.screenBg, fontSize: 12, fontWeight: FontWeight.w600))))),
+            SizedBox(height: 38, child: DecoratedBox(decoration: BoxDecoration(gradient: AppTokens.goldGradient, borderRadius: BorderRadius.circular(AppTokens.rInput)),
+              child: Material(color: Colors.transparent, child: InkWell(borderRadius: BorderRadius.circular(AppTokens.rInput),
+                onTap: () { HapticFeedback.selectionClick(); _openOfferUrl(context, offer.url); },
+                child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), child: Text('View offer', style: GoogleFonts.plusJakartaSans(color: AppTokens.screenBg, fontSize: 12.5, fontWeight: FontWeight.w600))))),
             )),
           ]),
         ),
       ]),
     ));
+  }
+
+  Widget _comparisonBar(double offerPrice, double yourPrice) {
+    final maxVal = (offerPrice > yourPrice ? offerPrice : yourPrice) * 1.15;
+    final cheaper = offerPrice <= yourPrice;
+    return SizedBox(height: 6, child: LayoutBuilder(builder: (context, constraints) {
+      final w = constraints.maxWidth;
+      final offerW = maxVal > 0 ? (offerPrice / maxVal * w).clamp(0.0, w) : 0.0;
+      final yourX = maxVal > 0 ? (yourPrice / maxVal * w).clamp(0.0, w - 2) : 0.0;
+      return Stack(children: [
+        Container(width: w, height: 6, decoration: BoxDecoration(color: AppTokens.fieldBg, borderRadius: BorderRadius.circular(3))),
+        Container(width: offerW, height: 6, decoration: BoxDecoration(color: cheaper ? AppTokens.success : AppTokens.brandStart, borderRadius: BorderRadius.circular(3))),
+        Positioned(left: yourX, child: Container(width: 2, height: 6, color: AppTokens.gold)),
+      ]);
+    }));
   }
 }

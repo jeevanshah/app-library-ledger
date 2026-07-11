@@ -163,6 +163,21 @@ class _AddAppScreenState extends State<AddAppScreen>
         });
       }
     });
+
+    _loadQuickEntries();
+  }
+
+  Future<void> _loadQuickEntries() async {
+    final tracked = await StorageService().getApps();
+    if (!mounted) return;
+    final catalog = CatalogService();
+    final entries = <CatalogEntry>[];
+    for (final e in (catalog.appScanEntries + catalog.webManualEntries)) {
+      if (e.pricingTiers.isEmpty || e.isTrackedIn(tracked)) continue;
+      entries.add(e);
+      if (entries.length >= 10) break;
+    }
+    setState(() => _quickEntries = entries);
   }
 
   void _scrollToBilling() {
@@ -224,7 +239,7 @@ class _AddAppScreenState extends State<AddAppScreen>
       isScrollControlled: true,
       backgroundColor: AppTokens.cardBg,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) =>
           _CategoryPickerSheet(categories: _categories, selected: _category),
@@ -348,11 +363,10 @@ class _AddAppScreenState extends State<AddAppScreen>
 
     if (widget.appToEdit != null) {
       await NotificationService().cancelReminders(widget.appToEdit!.id);
-      await NotificationService().cancelPromoReminders(widget.appToEdit!.id);
     }
     await StorageService().saveApp(app);
-    await NotificationService().scheduleRenewalReminder(app);
-    await NotificationService().schedulePromoReminder(app);
+    final allApps = await StorageService().getApps();
+    await NotificationService().rescheduleAll(allApps);
     if (!mounted) return;
     HapticFeedback.lightImpact();
     Navigator.pop(context, true);
@@ -407,6 +421,8 @@ class _AddAppScreenState extends State<AddAppScreen>
     if (ok != true) return;
     await StorageService().deleteApp(a.id);
     await NotificationService().cancelReminders(a.id);
+    final remaining = await StorageService().getApps();
+    await NotificationService().rescheduleAll(remaining);
     if (!mounted) return;
     Navigator.pop(context, true);
   }
@@ -723,7 +739,7 @@ class _AddAppScreenState extends State<AddAppScreen>
           const SizedBox(width: 10),
           Text(
             'Set from Offers tab',
-            style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12),
+            style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5),
           ),
         ]),
       );
@@ -731,8 +747,8 @@ class _AddAppScreenState extends State<AddAppScreen>
     return _labeled(
       'Plan type (optional)',
       Container(
-        height: 48,
-        padding: const EdgeInsets.all(3),
+        height: 52,
+        padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
           color: AppTokens.fieldBg,
           borderRadius: BorderRadius.circular(AppTokens.rInput),
@@ -883,13 +899,13 @@ class _AddAppScreenState extends State<AddAppScreen>
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
-                        vertical: 10,
+                        vertical: 12,
                       ),
                       decoration: BoxDecoration(
                         color: sel
                             ? AppTokens.gold.withValues(alpha: 0.12)
                             : AppTokens.fieldBg,
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(AppTokens.rPill),
                         border: Border.all(
                           color: sel
                               ? AppTokens.gold.withValues(alpha: 0.3)
@@ -900,7 +916,7 @@ class _AddAppScreenState extends State<AddAppScreen>
                         '${t.tierName} · \$${t.monthlyPrice.toStringAsFixed(2)}',
                         style: GoogleFonts.spaceGrotesk(
                           color: sel ? AppTokens.gold : AppTokens.textPrimary,
-                          fontSize: 13,
+                          fontSize: 12.5,
                           fontWeight: FontWeight.w600,
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
@@ -916,18 +932,18 @@ class _AddAppScreenState extends State<AddAppScreen>
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
-                      vertical: 10,
+                      vertical: 12,
                     ),
                     decoration: BoxDecoration(
                       color: AppTokens.fieldBg,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(AppTokens.rPill),
                       border: Border.all(color: AppTokens.hairline),
                     ),
                     child: Text(
                       'Custom',
                       style: GoogleFonts.plusJakartaSans(
                         color: AppTokens.textMuted,
-                        fontSize: 13,
+                        fontSize: 12.5,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -1026,12 +1042,7 @@ class _AddAppScreenState extends State<AddAppScreen>
 
   // C2 — Quick Add from catalog
   Widget _quickAddSection() {
-    final catalog = CatalogService();
-    List<CatalogEntry> quickEntries = [];
-    for (final e in (catalog.appScanEntries + catalog.webManualEntries)) {
-      if (e.pricingTiers.isNotEmpty) quickEntries.add(e);
-      if (quickEntries.length >= 10) break;
-    }
+    final quickEntries = _quickEntries;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1062,24 +1073,27 @@ class _AddAppScreenState extends State<AddAppScreen>
                   );
                   if (result == true && mounted) Navigator.pop(context, true);
                 },
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.wifi_tethering_rounded,
-                      size: 14,
-                      color: AppTokens.gold,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      'Scan my phone',
-                      style: GoogleFonts.plusJakartaSans(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.wifi_tethering_rounded,
+                        size: 14,
                         color: AppTokens.gold,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 5),
+                      Text(
+                        'Scan my phone',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTokens.gold,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -1107,7 +1121,7 @@ class _AddAppScreenState extends State<AddAppScreen>
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: AppTokens.fieldBg,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(AppTokens.rInput),
                     border: Border.all(color: AppTokens.hairline),
                   ),
                   child: Column(
@@ -1121,7 +1135,7 @@ class _AddAppScreenState extends State<AddAppScreen>
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.plusJakartaSans(
                           color: AppTokens.textPrimary,
-                          fontSize: 11.5,
+                          fontSize: 12.5,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -1130,7 +1144,7 @@ class _AddAppScreenState extends State<AddAppScreen>
                         'from \$${priceMin.toStringAsFixed(2)}',
                         style: GoogleFonts.spaceGrotesk(
                           color: AppTokens.textMuted,
-                          fontSize: 10,
+                          fontSize: 11,
                           fontWeight: FontWeight.w500,
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
@@ -1148,7 +1162,10 @@ class _AddAppScreenState extends State<AddAppScreen>
 
   Widget _header(bool isEdit) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTokens.padHeader,
+        vertical: 14,
+      ),
       child: Row(
         children: [
           _iconBtn(
@@ -1188,8 +1205,8 @@ class _AddAppScreenState extends State<AddAppScreen>
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 42,
-        height: 42,
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
           color: AppTokens.fieldBg,
           borderRadius: BorderRadius.circular(AppTokens.rIconBtn),
@@ -1202,7 +1219,7 @@ class _AddAppScreenState extends State<AddAppScreen>
         child: Icon(
           icon,
           size: 20,
-          color: danger ? AppTokens.danger : const Color(0xFFC9C9D6),
+          color: danger ? AppTokens.danger : AppTokens.textPrimary,
         ),
       ),
     );
@@ -1210,14 +1227,14 @@ class _AddAppScreenState extends State<AddAppScreen>
 
   Widget _saveBar(bool isEdit) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-      decoration: const BoxDecoration(
+      padding: const EdgeInsets.all(AppTokens.padContent),
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Color(0x000B0B11), AppTokens.screenBg],
+          colors: [AppTokens.screenBg.withValues(alpha: 0), AppTokens.screenBg],
         ),
-        border: Border(top: BorderSide(color: AppTokens.hairline)),
+        border: const Border(top: BorderSide(color: AppTokens.hairline)),
       ),
       child: PrimaryButton(
         label: isEdit ? 'Save changes' : 'Save subscription',
@@ -1340,25 +1357,30 @@ class _AddAppScreenState extends State<AddAppScreen>
                             GestureDetector(
                               onTap: () =>
                                   setState(() => _expanded = !_expanded),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    _expanded
-                                        ? Icons.expand_less_rounded
-                                        : Icons.expand_more_rounded,
-                                    color: AppTokens.textMuted,
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Got a promo price? Don\'t miss when it ends',
-                                    style: GoogleFonts.plusJakartaSans(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      _expanded
+                                          ? Icons.expand_less_rounded
+                                          : Icons.expand_more_rounded,
                                       color: AppTokens.textMuted,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
+                                      size: 18,
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Got a promo price? Don\'t miss when it ends',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        color: AppTokens.textMuted,
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                             AnimatedCrossFade(
@@ -1683,17 +1705,20 @@ class _CategoryPickerSheetState extends State<_CategoryPickerSheet> {
                         HapticFeedback.selectionClick();
                         setState(() => _color = c);
                       },
-                      child: Container(
-                        width: 30,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: c,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: _color == c
-                                ? Colors.white
-                                : Colors.transparent,
-                            width: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.all(7),
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: c,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: _color == c
+                                  ? Colors.white
+                                  : Colors.transparent,
+                              width: 2,
+                            ),
                           ),
                         ),
                       ),

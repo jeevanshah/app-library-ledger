@@ -69,6 +69,16 @@ class CatalogEntry {
     );
   }
 
+  /// Whether this catalog entry is already tracked among [apps] —
+  /// matches by packageName first (reliable), falling back to a
+  /// case-insensitive name match for entries with no packageName.
+  bool isTrackedIn(List<AppEntry> apps) {
+    if (packageName != null && apps.any((a) => a.packageName == packageName)) {
+      return true;
+    }
+    return apps.any((a) => a.name.toLowerCase() == name.toLowerCase());
+  }
+
   /// Creates an [AppEntry] from this catalog entry.
   AppEntry toAppEntry({String? appStoreLink}) => AppEntry(
     name: name,

@@ -5,7 +5,19 @@ import 'package:intl/intl.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import '../models/app_model.dart';
+import 'offer_relevance.dart';
+import 'offers_service.dart';
 import 'settings_service.dart';
+
+/// One app's renewal reminder about to fire at a specific offset/time —
+/// used to group same-day fires across apps in [NotificationService.rescheduleAll].
+class _RenewalFire {
+  final AppEntry app;
+  final int id;
+  final int offset;
+  final DateTime notifyAt;
+  _RenewalFire(this.app, this.id, this.offset, this.notifyAt);
+}
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -144,42 +156,82 @@ class NotificationService {
     return a.billingCycle == 'yearly' ? '$old → $newP/yr' : '$old → $newP/mo';
   }
 
-  Future<void> scheduleRenewalReminder(AppEntry app) async {
-    if (app.nextRenewalDate == null ||
-        !app.isActiveSubscription ||
-        app.subscriptionCost == null)
-      return;
-    final settings = await SettingsService().load();
-    if (!settings.enabled) return;
+  /// Normalizes a billing-cycle amount to its monthly equivalent, so it can
+  /// be fairly compared against offer prices (which are always monthly).
+  double _monthlyPrice(AppEntry a, double amount) =>
+      a.billingCycle == 'yearly' ? amount / 12 : amount;
 
-    final renewalDate = app.nextRenewalDate!;
-    final now = DateTime.now();
-    final ids = await _idsForApp(app.id);
+  /// One app's renewal reminder about to fire at a specific offset/time.
+  /// Used by [rescheduleAll] to group same-day fires across apps before
+  /// deciding whether each gets its own notification or a combined one.
+  Future<void> _scheduleSingleRenewalFire(_RenewalFire f) async {
+    final app = f.app;
     final charge = _chargeLabel(app);
+    var cheaperCount = 0;
+    double? monthlyCost;
+    if (app.serviceType != null && SettingsService().offersEnabled.value) {
+      monthlyCost = _monthlyPrice(app, app.subscriptionCost!);
+      final offers = await OffersService().fetch(enabled: true, force: false);
+      cheaperCount = countCheaperOffers(app, offers, monthlyCost);
+    }
+    final title = f.offset == 1
+        ? '${app.name} renews tomorrow'
+        : '${app.name} renews ${_dateFmt.format(app.nextRenewalDate!)}';
+    final body = f.offset == 1
+        ? '$charge charge coming tomorrow. Cancel today if you don\'t need it.'
+        : cheaperCount > 0
+        ? '$charge will be charged in ${f.offset} days. $cheaperCount ${serviceLabel(app.serviceType!)} plans are currently under \$${monthlyCost!.toStringAsFixed(2)}/mo.'
+        : '$charge will be charged in ${f.offset} days. Still using it?';
+    await _schedule(
+      f.id,
+      title,
+      body,
+      app.id,
+      tz.TZDateTime.from(f.notifyAt, tz.local),
+      'renewal_channel',
+      'Renewal Reminders',
+    );
+  }
 
-    for (final (id, offset) in ids) {
-      final notifyAt = _notificationDate(
-        renewalDate,
-        offset,
-        settings.hour,
-        settings.minute,
-      );
-      if (!notifyAt.isAfter(now)) continue;
-      final title = offset == 1
-          ? '${app.name} renews tomorrow'
-          : '${app.name} renews ${_dateFmt.format(renewalDate)}';
-      final body = offset == 1
-          ? '$charge charge coming tomorrow. Cancel today if you don\'t need it.'
-          : '$charge will be charged in $offset days. Still using it?';
-      await _schedule(
-        id,
-        title,
-        body,
-        app.id,
-        tz.TZDateTime.from(notifyAt, tz.local),
-        'renewal_channel',
-        'Renewal Reminders',
-      );
+  /// Two or more apps whose renewal reminders would otherwise fire on the
+  /// same calendar day get one combined notification instead.
+  Future<void> _scheduleCombinedRenewalFires(List<_RenewalFire> fires) async {
+    fires.sort((a, b) => a.app.name.compareTo(b.app.name));
+    final parts = fires
+        .map((f) => '${f.app.name} (${_chargeLabel(f.app)})')
+        .join(', ');
+    final total = fires.fold<double>(
+      0,
+      (sum, f) => sum + _monthlyPrice(f.app, f.app.subscriptionCost ?? 0),
+    );
+    final title = '${fires.length} renewals coming up';
+    final body = '$parts — \$${total.toStringAsFixed(2)}/mo total.';
+    await _schedule(
+      _combinedIdForDay(fires.first.notifyAt),
+      title,
+      body,
+      '',
+      tz.TZDateTime.from(fires.first.notifyAt, tz.local),
+      'renewal_channel',
+      'Renewal Reminders',
+    );
+  }
+
+  /// Stable per-calendar-day id for combined renewal notifications, well
+  /// outside the range used by per-app ids (max ~67,108,855).
+  int _combinedIdForDay(DateTime notifyAt) {
+    final day = DateTime(notifyAt.year, notifyAt.month, notifyAt.day);
+    return 900000000 + (day.millisecondsSinceEpoch ~/ 86400000);
+  }
+
+  /// Cancels any combined renewal notifications scheduled for the next few
+  /// weeks, so a day that no longer has 2+ apps clustered on it doesn't
+  /// leave a stale combined notification behind.
+  Future<void> _cancelCombinedRenewalReminders() async {
+    final today = DateTime.now();
+    for (var i = 0; i < 20; i++) {
+      final day = DateTime(today.year, today.month, today.day + i);
+      await _plugin.cancel(_combinedIdForDay(day));
     }
   }
 
@@ -195,6 +247,14 @@ class NotificationService {
     final now = DateTime.now();
     final ids = await _idsForApp(app.id, promo: true);
 
+    var cheaperCount = 0;
+    double? monthlyRegular;
+    if (app.serviceType != null && SettingsService().offersEnabled.value) {
+      monthlyRegular = _monthlyPrice(app, app.regularPrice!);
+      final offers = await OffersService().fetch(enabled: true, force: false);
+      cheaperCount = countCheaperOffers(app, offers, monthlyRegular);
+    }
+
     for (final (id, offset) in ids) {
       final notifyAt = _notificationDate(
         endDate,
@@ -208,6 +268,8 @@ class NotificationService {
           : '${app.name} promo ends ${_dateFmt.format(endDate)}';
       final body = offset == 1
           ? 'Tomorrow the price rises ${_oldNew(app)}.'
+          : cheaperCount > 0
+          ? 'Price jumps ${_oldNew(app)} in $offset days. $cheaperCount ${serviceLabel(app.serviceType!)} plans are currently under \$${monthlyRegular!.toStringAsFixed(2)}/mo.'
           : 'Price jumps ${_oldNew(app)} in $offset days. Decide before you\'re charged the full price.';
       await _schedule(
         id,
@@ -236,9 +298,44 @@ class NotificationService {
   }
 
   Future<void> rescheduleAll(List<AppEntry> apps) async {
-    for (final a in apps.where((a) => a.isActiveSubscription)) {
+    final active = apps.where((a) => a.isActiveSubscription).toList();
+
+    for (final a in active) {
       await cancelReminders(a.id);
-      await scheduleRenewalReminder(a);
+    }
+    await _cancelCombinedRenewalReminders();
+
+    final settings = await SettingsService().load();
+    if (settings.enabled) {
+      final now = DateTime.now();
+      final byDay = <DateTime, List<_RenewalFire>>{};
+      for (final a in active) {
+        if (a.nextRenewalDate == null || a.subscriptionCost == null) continue;
+        final ids = await _idsForApp(a.id);
+        for (final (id, offset) in ids) {
+          final notifyAt = _notificationDate(
+            a.nextRenewalDate!,
+            offset,
+            settings.hour,
+            settings.minute,
+          );
+          if (!notifyAt.isAfter(now)) continue;
+          final day = DateTime(notifyAt.year, notifyAt.month, notifyAt.day);
+          byDay
+              .putIfAbsent(day, () => [])
+              .add(_RenewalFire(a, id, offset, notifyAt));
+        }
+      }
+      for (final fires in byDay.values) {
+        if (fires.length == 1) {
+          await _scheduleSingleRenewalFire(fires.first);
+        } else {
+          await _scheduleCombinedRenewalFires(fires);
+        }
+      }
+    }
+
+    for (final a in active) {
       await schedulePromoReminder(a);
     }
   }
