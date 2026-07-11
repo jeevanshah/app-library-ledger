@@ -18,6 +18,7 @@ import '../services/offers_service.dart';
 import '../services/offers_matcher.dart';
 import '../theme/app_tokens.dart';
 import 'add_app_screen.dart';
+import 'discovery_screen.dart';
 import 'settings_screen.dart';
 import 'offers_screen.dart';
 
@@ -184,6 +185,96 @@ class _LibraryScreenState extends State<LibraryScreen>
       MaterialPageRoute(builder: (_) => AddAppScreen(categories: _cats)),
     );
     if (ok == true) _refresh();
+  }
+
+  Future<void> _goScan() async {
+    final ok = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const DiscoveryScreen(fromOnboarding: false)),
+    );
+    if (ok == true) _refresh();
+  }
+
+  Widget _emptyLibraryState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppTokens.padContent),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.receipt_long_rounded,
+              size: 40,
+              color: AppTokens.textFaint.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Nothing tracked yet',
+              style: GoogleFonts.playfairDisplay(
+                color: AppTokens.textStrong,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Add your first subscription to start tracking costs and renewals.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(
+                color: AppTokens.textMuted,
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: AppTokens.goldGradient,
+                  borderRadius: BorderRadius.circular(AppTokens.rInput),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(AppTokens.rInput),
+                    onTap: _goAdd,
+                    child: Center(
+                      child: Text(
+                        '+ Add your first subscription',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTokens.screenBg,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: _goScan,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'Scan my phone instead',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppTokens.textMuted,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    decoration: TextDecoration.underline,
+                    decorationColor: AppTokens.textMuted,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _goEdit(AppEntry a) async {
@@ -771,17 +862,17 @@ class _LibraryScreenState extends State<LibraryScreen>
                       const SizedBox(height: 12),
                       Expanded(
                         child: filtered.isEmpty
-                            ? Center(
-                                child: Text(
-                                  _apps.isEmpty
-                                      ? 'No subscriptions yet'
-                                      : 'No matches',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    color: AppTokens.textMuted,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                              )
+                            ? (_apps.isEmpty
+                                  ? _emptyLibraryState()
+                                  : Center(
+                                      child: Text(
+                                        'No matches',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          color: AppTokens.textMuted,
+                                          fontSize: 15,
+                                        ),
+                                      ),
+                                    ))
                             : _grid
                             ? GridView.builder(
                                 controller: _scrollCtrl,
@@ -1342,6 +1433,12 @@ class _DashboardView extends StatelessWidget {
     final otherInsights = insights
         .where((i) => i.id != 'health_score')
         .toList();
+    const kVisibleInsightCap = 3;
+    final visibleInsights = otherInsights.take(kVisibleInsightCap).toList();
+    final foldedInsights = otherInsights.skip(kVisibleInsightCap).toList();
+    final healthFactorCount = healthInsight.isNotEmpty
+        ? healthInsight.first.message.split('\n').length
+        : 0;
     final coming = analytics.getComingUp(apps);
     final promoEntries = coming
         .where((e) => e['label'] == 'Promo ends')
@@ -1632,8 +1729,10 @@ class _DashboardView extends StatelessWidget {
                 flex: 5,
                 child: Column(
                   children: [
-                    _statRow('Avg / app', _fmt.format(avg)),
-                    const SizedBox(height: 8),
+                    if (active > 1) ...[
+                      _statRow('Avg / app', _fmt.format(avg)),
+                      const SizedBox(height: 8),
+                    ],
                     _statRow('Active subs', '$active'),
                     const SizedBox(height: 8),
                     _statRow('Yearly proj.', _fmt.format(yearly)),
@@ -1662,9 +1761,24 @@ class _DashboardView extends StatelessWidget {
                     ins,
                     onDismiss: onDismissInsight,
                     showFactors: true,
+                    expanded: insightsExpanded,
                   ),
                 ),
-                if (otherInsights.isNotEmpty) ...[
+                ...visibleInsights.map(
+                  (ins) => _insightRow(
+                    ins,
+                    onDismiss: onDismissInsight,
+                    onTap: ins.entryId != null
+                        ? () {
+                            final entry = apps
+                                .where((a) => a.id == ins.entryId)
+                                .firstOrNull;
+                            if (entry != null) onEdit(entry);
+                          }
+                        : null,
+                  ),
+                ),
+                if (foldedInsights.isNotEmpty || healthFactorCount > 1) ...[
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Container(height: 1, color: AppTokens.hairline),
@@ -1675,7 +1789,9 @@ class _DashboardView extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            'Smart Insights (${otherInsights.length})',
+                            foldedInsights.isNotEmpty
+                                ? 'Smart Insights (${foldedInsights.length})'
+                                : 'Show health details',
                             style: GoogleFonts.plusJakartaSans(
                               color: AppTokens.textPrimary,
                               fontSize: 13,
@@ -1693,9 +1809,9 @@ class _DashboardView extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (insightsExpanded) ...[
+                  if (insightsExpanded && foldedInsights.isNotEmpty) ...[
                     const SizedBox(height: 10),
-                    ...otherInsights.map(
+                    ...foldedInsights.map(
                       (ins) => _insightRow(
                         ins,
                         onDismiss: onDismissInsight,
@@ -1808,6 +1924,7 @@ class _DashboardView extends StatelessWidget {
     required void Function(String) onDismiss,
     VoidCallback? onTap,
     bool showFactors = false,
+    bool expanded = true,
   }) {
     final fg = switch (ins.type) {
       InsightType.danger => AppTokens.danger,
@@ -1816,6 +1933,7 @@ class _DashboardView extends StatelessWidget {
       InsightType.info => AppTokens.brandEnd,
     };
     final isHealthScore = showFactors && ins.id == 'health_score';
+    final factorLines = isHealthScore ? ins.message.split('\n') : const <String>[];
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: GestureDetector(
@@ -1838,23 +1956,30 @@ class _DashboardView extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 3),
-                  if (isHealthScore)
-                    ...ins.message
-                        .split('\n')
-                        .map(
-                          (line) => Padding(
-                            padding: const EdgeInsets.only(bottom: 2),
-                            child: Text(
-                              line,
-                              style: GoogleFonts.plusJakartaSans(
-                                color: AppTokens.textMuted,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
+                  if (isHealthScore) ...[
+                    ...(expanded ? factorLines : factorLines.take(1)).map(
+                      (line) => Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: Text(
+                          line,
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppTokens.textMuted,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w500,
                           ),
-                        )
-                  else
+                        ),
+                      ),
+                    ),
+                    if (!expanded && factorLines.length > 1)
+                      Text(
+                        '+${factorLines.length - 1} more factor${factorLines.length - 1 == 1 ? '' : 's'}',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTokens.textFaint,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                  ] else
                     Text(
                       ins.message,
                       style: GoogleFonts.plusJakartaSans(

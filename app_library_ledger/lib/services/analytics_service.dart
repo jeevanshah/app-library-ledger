@@ -16,6 +16,7 @@ class SubscriptionInsight {
   final InsightType type;
   final double impactPerMonth;
   final String? entryId;
+  final List<String> relatedIds;
 
   SubscriptionInsight({
     required this.id,
@@ -24,6 +25,7 @@ class SubscriptionInsight {
     required this.type,
     this.impactPerMonth = 0,
     this.entryId,
+    this.relatedIds = const [],
   });
 }
 
@@ -224,9 +226,11 @@ class AnalyticsService {
       return all;
     }
 
-    // a) Uninstalled but paying
+    // a) Uninstalled but paying — one card each, unless there are
+    // several, in which case they'd otherwise flood the dashboard.
     final uninstalled = getUninstalledButPaying(apps, installed);
-    for (final a in uninstalled) {
+    if (uninstalled.length == 1) {
+      final a = uninstalled.first;
       all.add(
         SubscriptionInsight(
           id: 'uninstalled_${a.id}',
@@ -236,6 +240,18 @@ class AnalyticsService {
           type: InsightType.danger,
           impactPerMonth: _monthly(a),
           entryId: a.id,
+        ),
+      );
+    } else if (uninstalled.length > 1) {
+      final total = uninstalled.fold(0.0, (s, a) => s + _monthly(a));
+      all.add(
+        SubscriptionInsight(
+          id: 'uninstalled_agg',
+          title: '${uninstalled.length} uninstalled apps still billing you',
+          message: '${_fmt.format(total)}/mo across ${uninstalled.length} apps',
+          type: InsightType.danger,
+          impactPerMonth: total,
+          relatedIds: uninstalled.map((a) => a.id).toList(),
         ),
       );
     }
@@ -328,25 +344,34 @@ class AnalyticsService {
     // Sort: impactPerMonth desc, health last
     all.sort((a, b) => b.impactPerMonth.compareTo(a.impactPerMonth));
 
-    // Health score (always last)
+    // Health score (always last) — skipped for a single, factor-free
+    // subscription: "Excellent, no issues" on one app is chrome, not
+    // information. Once there's a real factor or a 2nd subscription,
+    // it becomes a meaningful portfolio-level signal again.
     final (score, factors) = getSubHealthScore(
       apps,
       uninstalled: uninstalled,
       promos: getPromoCliff(apps),
     );
-    all.add(
-      SubscriptionInsight(
-        id: 'health_score',
-        title: 'Subscription Health: ${getHealthLabel(score)}',
-        message: factors.map((f) => '${f.points} · ${f.label}').join('\n'),
-        type: score >= 75
-            ? InsightType.success
-            : score >= 50
-            ? InsightType.warning
-            : InsightType.danger,
-        impactPerMonth: score.toDouble(),
-      ),
-    );
+    if (factors.isNotEmpty || active.length >= 2) {
+      final sortedFactors = [...factors]
+        ..sort((a, b) => a.points.compareTo(b.points));
+      all.add(
+        SubscriptionInsight(
+          id: 'health_score',
+          title: 'Subscription Health: ${getHealthLabel(score)}',
+          message: sortedFactors
+              .map((f) => '${f.points} · ${f.label}')
+              .join('\n'),
+          type: score >= 75
+              ? InsightType.success
+              : score >= 50
+              ? InsightType.warning
+              : InsightType.danger,
+          impactPerMonth: score.toDouble(),
+        ),
+      );
+    }
 
     return all;
   }

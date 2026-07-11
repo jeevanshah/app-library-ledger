@@ -6,7 +6,6 @@ import 'services/settings_service.dart';
 import 'screens/library_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
-import 'screens/discovery_screen.dart';
 import 'screens/add_app_screen.dart';
 import 'theme/app_theme.dart';
 
@@ -33,7 +32,6 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   bool _showOnboarding = false;
-  bool _showDiscovery = false;
   bool _showSplash = true;
 
   @override
@@ -53,11 +51,7 @@ class _MyAppState extends State<MyApp> {
   void _completeOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('has_launched', true);
-    // On first launch, show the Discovery screen before Library
-    setState(() {
-      _showOnboarding = false;
-      _showDiscovery = true;
-    });
+    setState(() => _showOnboarding = false);
   }
 
   @override
@@ -100,8 +94,6 @@ class _MyAppState extends State<MyApp> {
           ? SplashScreen(onComplete: () => setState(() => _showSplash = false))
           : _showOnboarding
           ? OnboardingScreen(onComplete: _completeOnboarding)
-          : _showDiscovery
-          ? const DiscoveryScreen()
           : const LibraryScreen(),
     );
   }

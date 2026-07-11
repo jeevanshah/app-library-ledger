@@ -280,6 +280,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                           ],
                         ),
+                        const SizedBox(height: 6),
+                        Text(
+                          "You'll get a notification on each day selected before a subscription renews.",
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppTokens.textMuted,
+                            fontSize: 11,
+                          ),
+                        ),
                         const SizedBox(height: AppTokens.gapItem),
                         _row(
                           'Promo ending alerts',
@@ -291,7 +299,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 : null,
                           ),
                         ),
-                        const SizedBox(height: AppTokens.gapItem),
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            bottom: AppTokens.gapItem,
+                          ),
+                          child: Text(
+                            "Get notified a few days before a promo price ends, so a plan doesn't quietly jump to the regular rate.",
+                            style: GoogleFonts.plusJakartaSans(
+                              color: AppTokens.textMuted,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
                         _row(
                           'Reminder time',
                           trailing: GestureDetector(
@@ -303,6 +322,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 fontSize: 15,
                                 fontWeight: FontWeight.w700,
                               ),
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            'Renewal reminders and promo alerts above fire at this time of day.',
+                            style: GoogleFonts.plusJakartaSans(
+                              color: AppTokens.textMuted,
+                              fontSize: 11,
                             ),
                           ),
                         ),

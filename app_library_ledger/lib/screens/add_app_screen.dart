@@ -122,6 +122,16 @@ class _AddAppScreenState extends State<AddAppScreen>
             );
         if (!matchesTier) _useCustomCost = true;
       }
+    } else if (widget.prefillServiceType == null) {
+      // New, unassisted entry: default to a calm "Uncategorized" bucket
+      // instead of whatever happens to be first in the seeded list.
+      var unc = _findCategory(uncategorizedName);
+      if (unc == null) {
+        unc = Category(name: uncategorizedName, color: Colors.grey);
+        _categories.add(unc);
+        StorageService().saveCategory(unc);
+      }
+      initialCategory = uncategorizedName;
     }
 
     _category = _resolveCategory(initialCategory);
@@ -432,10 +442,7 @@ class _AddAppScreenState extends State<AddAppScreen>
     setState(() {
       _cycle = cycle;
       if (!_userTouchedDate) {
-        final now = DateTime.now();
-        _renewal = cycle == 'yearly'
-            ? DateTime(now.year + 1, now.month, now.day)
-            : DateTime(now.year, now.month + 1, now.day);
+        _renewal = defaultRenewalDate(cycle);
       }
     });
   }
@@ -453,8 +460,12 @@ class _AddAppScreenState extends State<AddAppScreen>
         _costCtrl.text = catEntry.pricingTiers.first.monthlyPrice
             .toStringAsFixed(2);
       }
+      if (!_userTouchedDate) {
+        _renewal = defaultRenewalDate(_cycle);
+      }
       _nameError = false;
       _costError = false;
+      _renewalError = false;
     });
   }
 
@@ -672,7 +683,7 @@ class _AddAppScreenState extends State<AddAppScreen>
   Widget _categoryField() {
     final cat = _findCategory(_category);
     return _labeled(
-      'Category',
+      'Category (optional)',
       InkWell(
         borderRadius: BorderRadius.circular(AppTokens.rInput),
         onTap: _openCategoryPicker,

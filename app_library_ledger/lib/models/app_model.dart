@@ -1,5 +1,15 @@
 import 'package:uuid/uuid.dart';
 
+/// Default next-renewal date for a given billing cycle, one cycle out
+/// from [from] (or now). Shared by anywhere a renewal date needs a
+/// sensible default without the user having picked one yet.
+DateTime defaultRenewalDate(String cycle, [DateTime? from]) {
+  final now = from ?? DateTime.now();
+  return cycle == 'yearly'
+      ? DateTime(now.year + 1, now.month, now.day)
+      : DateTime(now.year, now.month + 1, now.day);
+}
+
 class _Unset {
   const _Unset();
 }

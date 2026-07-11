@@ -462,6 +462,7 @@ class _OffersScreenState extends State<OffersScreen> {
       widget.onSaveApp();
       final freshApps = await StorageService().getApps();
       if (mounted) { _loadAnchor(freshApps); setState(() {}); }
+      if (mounted && _showTierPicker) _showTierPickerSheet();
     }
   }
 
@@ -475,12 +476,12 @@ class _OffersScreenState extends State<OffersScreen> {
     widget.onSaveApp();
     final freshApps = await StorageService().getApps();
     if (mounted) { _loadAnchor(freshApps); setState(() {}); }
+    if (mounted && _showTierPicker) _showTierPickerSheet();
   }
 
   void _showAnchorConfig() {
     if (_anchorEntry == null) return;
     if (_segment != 'nbn' && _segment != 'mobile') return;
-    final options = _tierPickerOptions;
     final entries = widget.apps.where((a) => a.isActiveSubscription).toList();
     showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: AppTokens.cardBg, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => SafeArea(child: Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 20), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -493,17 +494,7 @@ class _OffersScreenState extends State<OffersScreen> {
         const SizedBox(height: 16),
         Text(_tierPickerQuestion + ' (optional)', style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
-        Wrap(spacing: 6, runSpacing: 6, children: [
-          for (final t in options)
-            GestureDetector(onTap: () { HapticFeedback.selectionClick(); _setAnchorTier(t); Navigator.pop(context); },
-              child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(color: _anchorEntry?.serviceTier == t ? AppTokens.gold.withValues(alpha: 0.12) : AppTokens.fieldBg, borderRadius: BorderRadius.circular(AppTokens.rPill), border: Border.all(color: _anchorEntry?.serviceTier == t ? AppTokens.gold.withValues(alpha: 0.3) : AppTokens.hairline)),
-                child: Text(t, style: GoogleFonts.plusJakartaSans(color: _anchorEntry?.serviceTier == t ? AppTokens.gold : AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
-              ),
-            ),
-          GestureDetector(onTap: () { HapticFeedback.selectionClick(); _setNotSure(); Navigator.pop(context); },
-            child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12), child: Text('Not sure', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5)))),
-        ]),
+        _tierChipsWrap(),
         const SizedBox(height: AppTokens.gapItem),
         const Divider(color: AppTokens.hairlineStrong),
         const SizedBox(height: AppTokens.gapItem),
@@ -535,23 +526,52 @@ class _OffersScreenState extends State<OffersScreen> {
   }
 
   Widget _buildTierPickerCard() {
-    final options = _tierPickerOptions;
-    return Container(padding: const EdgeInsets.all(AppTokens.padCard), decoration: BoxDecoration(color: AppTokens.fieldBg, borderRadius: BorderRadius.circular(AppTokens.rInput), border: Border.all(color: AppTokens.hairlineStrong)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(_tierPickerQuestion + ' (optional)', style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12.5)),
-        const SizedBox(height: 8),
-        Wrap(spacing: 6, runSpacing: 6, children: [
-          for (final t in options)
-            GestureDetector(onTap: () => _setAnchorTier(t),
-              child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(color: AppTokens.cardBg, borderRadius: BorderRadius.circular(AppTokens.rPill), border: Border.all(color: AppTokens.hairlineStrong)),
-                child: Text(t, style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5, fontWeight: FontWeight.w500)),
-              ),
-            ),
-          GestureDetector(onTap: _setNotSure,
-            child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12), child: Text('Not sure', style: GoogleFonts.plusJakartaSans(color: AppTokens.textFaint, fontSize: 12.5)))),
-        ]),
+    return Container(padding: const EdgeInsets.symmetric(horizontal: AppTokens.padCard, vertical: 12), decoration: BoxDecoration(color: AppTokens.fieldBg, borderRadius: BorderRadius.circular(AppTokens.rInput), border: Border.all(color: AppTokens.hairlineStrong)),
+      child: Row(children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text(_tierPickerQuestion, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 2),
+          Text('Optional — helps match you to the right tier', style: GoogleFonts.plusJakartaSans(color: AppTokens.textFaint, fontSize: 11)),
+        ])),
+        const SizedBox(width: 12),
+        GestureDetector(
+          onTap: _showTierPickerSheet,
+          child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), decoration: BoxDecoration(border: Border.all(color: AppTokens.hairlineStrong), borderRadius: BorderRadius.circular(8)),
+            child: Text('Set', style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w500)),
+          ),
+        ),
       ]),
+    );
+  }
+
+  Widget _tierChipsWrap() {
+    final options = _tierPickerOptions;
+    return Wrap(spacing: 6, runSpacing: 6, children: [
+      for (final t in options)
+        GestureDetector(onTap: () { HapticFeedback.selectionClick(); _setAnchorTier(t); Navigator.pop(context); },
+          child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(color: _anchorEntry?.serviceTier == t ? AppTokens.gold.withValues(alpha: 0.12) : AppTokens.fieldBg, borderRadius: BorderRadius.circular(AppTokens.rPill), border: Border.all(color: _anchorEntry?.serviceTier == t ? AppTokens.gold.withValues(alpha: 0.3) : AppTokens.hairline)),
+            child: Text(t, style: GoogleFonts.plusJakartaSans(color: _anchorEntry?.serviceTier == t ? AppTokens.gold : AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
+          ),
+        ),
+      GestureDetector(onTap: () { HapticFeedback.selectionClick(); _setNotSure(); Navigator.pop(context); },
+        child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12), child: Text('Not sure', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5)))),
+    ]);
+  }
+
+  void _showTierPickerSheet() {
+    if (_anchorEntry == null) return;
+    if (_segment != 'nbn' && _segment != 'mobile') return;
+    showModalBottomSheet(context: context, backgroundColor: AppTokens.cardBg, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(child: Padding(padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Center(child: Container(width: 32, height: 4, decoration: BoxDecoration(color: AppTokens.hairlineStrong, borderRadius: BorderRadius.circular(2)))),
+        const SizedBox(height: 12),
+        Text(_tierPickerQuestion, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 4),
+        Text('Helps match you to the right tier of offers.', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5)),
+        const SizedBox(height: 16),
+        _tierChipsWrap(),
+      ]))),
     );
   }
 
@@ -596,7 +616,13 @@ class _OffersScreenState extends State<OffersScreen> {
       Expanded(child: GestureDetector(onTap: _showAvgExplain, child: Text('Prices shown as first-year averages \u24D8', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)))),
       GestureDetector(onTap: _cycleSort, child: Row(mainAxisSize: MainAxisSize.min, children: [
         Text('Sort: ${_sortLabel.toLowerCase()}', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
-        const SizedBox(width: 2), const Icon(Icons.swap_vert_rounded, size: 14, color: AppTokens.textMuted),
+        const SizedBox(width: 6),
+        Row(mainAxisSize: MainAxisSize.min, children: List.generate(3, (i) => Container(
+          width: 4, height: 4,
+          margin: EdgeInsets.only(left: i == 0 ? 0 : 3),
+          decoration: BoxDecoration(shape: BoxShape.circle, color: i == _sortMode ? AppTokens.gold : AppTokens.hairlineStrong),
+        ))),
+        const SizedBox(width: 4), const Icon(Icons.swap_vert_rounded, size: 14, color: AppTokens.textMuted),
       ])),
     ]);
   }
@@ -759,12 +785,8 @@ class _OfferCard extends StatelessWidget {
           Text(_fmt.format(avg), style: GoogleFonts.spaceGrotesk(color: AppTokens.textStrong, fontSize: 20, fontWeight: FontWeight.w500, fontFeatures: const [FontFeature.tabularFigures()])),
           const SizedBox(width: 4), Text('/mo avg first year', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
           const Spacer(),
-          if (delta != null && !anchorNotSure) Text(delta == 0 ? '\$0.00 vs yours' : '${delta < 0 ? '\u2212' : '+'}${_fmt.format(delta.abs())}/mo vs yours', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
+          if (delta != null && !anchorNotSure) Text(delta == 0 ? '\$0.00 vs yours' : '${delta < 0 ? '\u2212' : '+'}${_fmt.format(delta.abs())}/mo vs yours', style: GoogleFonts.plusJakartaSans(color: delta < 0 ? AppTokens.success : AppTokens.textMuted, fontSize: 11, fontWeight: delta < 0 ? FontWeight.w600 : FontWeight.w400)),
         ]),
-        if (userCost != null && !anchorNotSure) ...[
-          const SizedBox(height: 6),
-          _comparisonBar(avg, userCost),
-        ],
         const SizedBox(height: 6),
         Text(isFlat ? _fmt.format(offer.regularPrice) + ' flat \u00B7 no intro pricing' : '${_fmt.format(offer.promoPrice)} for ${offer.promoMonths} mo \u00B7 then ${_fmt.format(offer.regularPrice)}/mo', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
         const SizedBox(height: 10),
@@ -781,20 +803,5 @@ class _OfferCard extends StatelessWidget {
         ),
       ]),
     ));
-  }
-
-  Widget _comparisonBar(double offerPrice, double yourPrice) {
-    final maxVal = (offerPrice > yourPrice ? offerPrice : yourPrice) * 1.15;
-    final cheaper = offerPrice <= yourPrice;
-    return SizedBox(height: 6, child: LayoutBuilder(builder: (context, constraints) {
-      final w = constraints.maxWidth;
-      final offerW = maxVal > 0 ? (offerPrice / maxVal * w).clamp(0.0, w) : 0.0;
-      final yourX = maxVal > 0 ? (yourPrice / maxVal * w).clamp(0.0, w - 2) : 0.0;
-      return Stack(children: [
-        Container(width: w, height: 6, decoration: BoxDecoration(color: AppTokens.fieldBg, borderRadius: BorderRadius.circular(3))),
-        Container(width: offerW, height: 6, decoration: BoxDecoration(color: cheaper ? AppTokens.success : AppTokens.brandStart, borderRadius: BorderRadius.circular(3))),
-        Positioned(left: yourX, child: Container(width: 2, height: 6, color: AppTokens.gold)),
-      ]);
-    }));
   }
 }
