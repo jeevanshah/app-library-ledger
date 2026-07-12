@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_model.dart';
 import '../models/category_model.dart';
+import '../models/offer.dart';
 import '../services/storage_service.dart';
 import '../services/notification_service.dart';
 import '../services/analytics_service.dart';
@@ -16,6 +17,7 @@ import '../services/settings_service.dart';
 import '../services/subscription_scanner.dart';
 import '../services/offers_service.dart';
 import '../services/offers_matcher.dart';
+import '../services/offer_relevance.dart';
 import '../theme/app_tokens.dart';
 import 'add_app_screen.dart';
 import 'discovery_screen.dart';
@@ -49,6 +51,7 @@ class _LibraryScreenState extends State<LibraryScreen>
   Map<String, int> _dismissedInsights = {};
   Set<String> _dismissedPromoResolve = {};
   List<MatchedOffer> _matchedOffers = [];
+  List<SavingsOffer> _offers = [];
   bool _offersEnabled = false;
   Set<String> _seenOfferIds = {};
   bool _refreshing = false;
@@ -163,8 +166,10 @@ class _LibraryScreenState extends State<LibraryScreen>
         final offers = await OffersService().fetch(enabled: true);
         final matcher = OffersMatcher(_analytics);
         _matchedOffers = matcher.match(apps, offers);
+        _offers = offers;
       } else {
         _matchedOffers = [];
+        _offers = [];
       }
 
       if (!mounted) return;
@@ -925,6 +930,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                     matchedOffers: _matchedOffers,
                     offersEnabled: _offersEnabled,
                     onOpenOffers: () => setState(() => _tab = 3),
+                    offers: _offers,
                   ),
                   // ── Settings Tab ──
                   const SettingsScreen(),
@@ -1397,6 +1403,7 @@ class _DashboardView extends StatelessWidget {
   final List<MatchedOffer> matchedOffers;
   final bool offersEnabled;
   final VoidCallback onOpenOffers;
+  final List<SavingsOffer> offers;
 
   const _DashboardView({
     required this.apps,
@@ -1414,6 +1421,7 @@ class _DashboardView extends StatelessWidget {
     required this.matchedOffers,
     required this.offersEnabled,
     required this.onOpenOffers,
+    required this.offers,
   });
 
   @override
@@ -1430,9 +1438,10 @@ class _DashboardView extends StatelessWidget {
     final healthInsight = insights
         .where((i) => i.id == 'health_score')
         .toList();
-    final otherInsights = insights
-        .where((i) => i.id != 'health_score')
-        .toList();
+    final otherInsights = [
+      ...insights.where((i) => i.id != 'health_score'),
+      ...buildOfferSavingsInsights(apps, offers, dismissed),
+    ]..sort((a, b) => b.impactPerMonth.compareTo(a.impactPerMonth));
     const kVisibleInsightCap = 3;
     final visibleInsights = otherInsights.take(kVisibleInsightCap).toList();
     final foldedInsights = otherInsights.skip(kVisibleInsightCap).toList();
@@ -1683,63 +1692,66 @@ class _DashboardView extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppTokens.hairline),
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 4,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'MONTHLY TOTAL',
-                      style: GoogleFonts.plusJakartaSans(
-                        color: AppTokens.textFaint,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        _fmt.format(monthly),
-                        maxLines: 1,
-                        style: GoogleFonts.spaceGrotesk(
-                          color: AppTokens.textPrimary,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.5,
-                          fontFeatures: const [FontFeature.tabularFigures()],
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  flex: 4,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'MONTHLY TOTAL',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTokens.textFaint,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.2,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                width: 1,
-                height: 62,
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                color: AppTokens.hairline,
-              ),
-              Expanded(
-                flex: 5,
-                child: Column(
-                  children: [
-                    if (active > 1) ...[
-                      _statRow('Avg / app', _fmt.format(avg)),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _fmt.format(monthly),
+                          maxLines: 1,
+                          style: GoogleFonts.spaceGrotesk(
+                            color: AppTokens.textPrimary,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.5,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
                     ],
-                    _statRow('Active subs', '$active'),
-                    const SizedBox(height: 8),
-                    _statRow('Yearly proj.', _fmt.format(yearly)),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+                Container(
+                  width: 1,
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  color: AppTokens.hairline,
+                ),
+                Expanded(
+                  flex: 5,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (active > 1) ...[
+                        _statRow('Avg / app', _fmt.format(avg)),
+                        const SizedBox(height: 8),
+                      ],
+                      _statRow('Active subs', '$active'),
+                      const SizedBox(height: 8),
+                      _statRow('Yearly proj.', _fmt.format(yearly)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 14),
@@ -1768,14 +1780,16 @@ class _DashboardView extends StatelessWidget {
                   (ins) => _insightRow(
                     ins,
                     onDismiss: onDismissInsight,
-                    onTap: ins.entryId != null
-                        ? () {
-                            final entry = apps
-                                .where((a) => a.id == ins.entryId)
-                                .firstOrNull;
-                            if (entry != null) onEdit(entry);
-                          }
-                        : null,
+                    onTap: ins.id.startsWith('offer_savings_')
+                        ? onOpenOffers
+                        : ins.entryId != null
+                            ? () {
+                                final entry = apps
+                                    .where((a) => a.id == ins.entryId)
+                                    .firstOrNull;
+                                if (entry != null) onEdit(entry);
+                              }
+                            : null,
                   ),
                 ),
                 if (foldedInsights.isNotEmpty || healthFactorCount > 1) ...[
@@ -1815,14 +1829,16 @@ class _DashboardView extends StatelessWidget {
                       (ins) => _insightRow(
                         ins,
                         onDismiss: onDismissInsight,
-                        onTap: ins.entryId != null
-                            ? () {
-                                final entry = apps
-                                    .where((a) => a.id == ins.entryId)
-                                    .firstOrNull;
-                                if (entry != null) onEdit(entry);
-                              }
-                            : null,
+                        onTap: ins.id.startsWith('offer_savings_')
+                            ? onOpenOffers
+                            : ins.entryId != null
+                                ? () {
+                                    final entry = apps
+                                        .where((a) => a.id == ins.entryId)
+                                        .firstOrNull;
+                                    if (entry != null) onEdit(entry);
+                                  }
+                                : null,
                       ),
                     ),
                   ],

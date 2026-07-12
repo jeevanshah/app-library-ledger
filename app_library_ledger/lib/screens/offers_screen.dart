@@ -613,7 +613,8 @@ class _OffersScreenState extends State<OffersScreen> {
 
   Widget _buildSortRow() {
     return Row(children: [
-      Expanded(child: GestureDetector(onTap: _showAvgExplain, child: Text('Prices shown as first-year averages \u24D8', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)))),
+      Expanded(child: GestureDetector(onTap: _showAvgExplain, child: Text('Prices shown as first-year averages \u24D8', maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)))),
+      const SizedBox(width: 8),
       GestureDetector(onTap: _cycleSort, child: Row(mainAxisSize: MainAxisSize.min, children: [
         Text('Sort: ${_sortLabel.toLowerCase()}', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
         const SizedBox(width: 6),
