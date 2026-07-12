@@ -7,7 +7,7 @@ class SavingsOffer {
   final double promoPrice;
   final double regularPrice;
   final int promoMonths;
-  final DateTime validUntil;
+  final DateTime? validUntil;
   final String url;
   final double? minCurrentSpend;
   final String? speedTier;
@@ -26,7 +26,7 @@ class SavingsOffer {
     required this.promoPrice,
     required this.regularPrice,
     required this.promoMonths,
-    required this.validUntil,
+    this.validUntil,
     required this.url,
     this.minCurrentSpend,
     this.speedTier,
@@ -47,10 +47,50 @@ class SavingsOffer {
     return (promoTotal + ongoing) / 12;
   }
 
+  /// Buckets this offer's raw `tier` into the app's fixed 4-tier-per-
+  /// segment convention ("NBN 25/50/100/500", "<20GB/20–60GB/60GB+/
+  /// Unlimited") for matching/filtering/grouping. Real-world feeds are
+  /// far more granular than that (e.g. "NBN 100/20", "7GB") — `tier`
+  /// itself is kept raw for precise display; use this getter anywhere
+  /// tiers need to compare equal (tier picker, "your tier" matching,
+  /// filter chips, per-tier grouping).
+  String? get tierBucket {
+    if (tier == null) return null;
+    final digits = RegExp(r'\d+').firstMatch(tier!);
+    if (serviceType == 'nbn') {
+      final down = digits != null ? int.tryParse(digits.group(0)!) : null;
+      if (down == null) return null;
+      if (down <= 37) return 'NBN 25';
+      if (down <= 75) return 'NBN 50';
+      if (down <= 300) return 'NBN 100';
+      return 'NBN 500';
+    }
+    if (serviceType == 'mobile') {
+      if (tier == 'Unlimited') return 'Unlimited';
+      final gb = digits != null ? int.tryParse(digits.group(0)!) : null;
+      if (gb == null) return null;
+      if (gb < 20) return '<20GB';
+      if (gb < 60) return '20–60GB';
+      return '60GB+';
+    }
+    return tier;
+  }
+
   factory SavingsOffer.fromJson(Map<String, dynamic> json) {
-    final validUntil = DateTime.tryParse(json['validUntil'] as String? ?? '');
-    if (validUntil == null || validUntil.isBefore(DateTime.now())) {
-      throw FormatException('Offer expired or missing validUntil');
+    // validUntil is optional: a provider's page may not state an explicit
+    // calendar end-date (e.g. a flat plan with no promo). Only reject the
+    // offer when a date IS given and it's already in the past -- a missing
+    // date means "no known expiry," not "invalid."
+    final validUntilRaw = json['validUntil'] as String?;
+    DateTime? validUntil;
+    if (validUntilRaw != null && validUntilRaw.isNotEmpty) {
+      validUntil = DateTime.tryParse(validUntilRaw);
+      if (validUntil == null) {
+        throw FormatException('Unparseable validUntil: $validUntilRaw');
+      }
+      if (validUntil.isBefore(DateTime.now())) {
+        throw FormatException('Offer expired');
+      }
     }
     final category = json['category'] as String? ?? '';
     const validCats = [

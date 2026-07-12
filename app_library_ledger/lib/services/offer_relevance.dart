@@ -14,7 +14,7 @@ int countCheaperOffers(
   final sameService = offers.where((o) => o.serviceType == app.serviceType);
   final tier = app.serviceTier;
   final tiered = tier != null
-      ? sameService.where((o) => o.tier == tier)
+      ? sameService.where((o) => o.tierBucket == tier)
       : sameService;
   final pool = tiered.isNotEmpty ? tiered : sameService;
   return pool.where((o) => o.promoPrice < comparePrice).length;

@@ -8,11 +8,13 @@ correctly inside the app.
 
 ## Hosting
 
-- A plain **JSON array** (not wrapped in an object) at the **repo
-  root** of `jeevanshah/app-library-ledger`, branch `main`.
-- Fetched by the app via GitHub raw:
-  `https://raw.githubusercontent.com/jeevanshah/app-library-ledger/main/offers.json`
+- A plain **JSON array** (not wrapped in an object).
+- Currently fetched from `jeevanshah/au-plans-scraper`'s `data/deals.json`
+  via jsDelivr's GitHub CDN:
+  `https://cdn.jsdelivr.net/gh/jeevanshah/au-plans-scraper@main/data/deals.json`
   (hardcoded in `app_library_ledger/lib/services/offers_service.dart`).
+  Previously hosted as `offers.json` at the root of
+  `jeevanshah/app-library-ledger` — kept here for history, no longer live.
 - The app caches this for 12 hours; there's no other invalidation
   mechanism, so don't expect same-minute freshness on the client side.
 
@@ -33,8 +35,13 @@ correctly inside the app.
 | `promoPrice` | number | The discounted/current price |
 | `regularPrice` | number | The post-promo price the plan reverts to |
 | `promoMonths` | integer | How many months the promo price lasts (clamped 0–12 by the app) |
-| `validUntil` | ISO date string | See hard validation below |
 | `url` | string | Link to the offer |
+
+## Optional-but-important fields
+
+| Field | Type | Notes |
+|---|---|---|
+| `validUntil` | ISO date string, or `null` | Optional as of the current scraper (`au-plans-scraper`) — many real provider pages don't state an explicit calendar end-date for a plan. `null`/omitted means "no known expiry," not "invalid." If a date IS given, it must be parseable **and** in the future — an already-expired `validUntil` still gets the offer dropped silently. |
 
 ## Optional fields
 
@@ -55,25 +62,44 @@ correctly inside the app.
 throws away any entry that fails these checks — there is no error
 surfaced to the user, the offer just doesn't appear:
 
-- `validUntil` must parse as a valid date **and be in the future**
-  relative to when the app fetches the feed. **Never publish an
-  already-expired offer.**
+- `validUntil`, if present, must parse as a valid date **and be in the
+  future** relative to when the app fetches the feed. **Never publish
+  an already-expired offer.** Omit or send `null` if there's no known
+  expiry — don't invent a date.
 - `category` must be in the app's fixed allow-list (currently: `Media
   / Streaming`, `Productivity`, `Utilities`, `Shopping`, `Health /
   Fitness`, `Social`, `Education`, `Gaming`).
 - `regularPrice` must be present.
 - `id` must be present.
 
-## Exact tier string conventions
+## Tier strings — now bucketed client-side, no longer byte-for-byte
 
-These strings drive tier-matching features in the app (a "your tier"
-badge, filter chips). A mismatch doesn't error — it just silently
-fails to match, which is a hard bug to notice. Use these exact
-strings:
+Earlier versions of this doc required `tier` to exactly match one of
+4 fixed strings per segment (`"NBN 25"`, `"<20GB"`, etc.), matched
+byte-for-byte in the app. **That's no longer required.** The current
+scraper (`au-plans-scraper`) produces much more granular, realistic
+tier strings — e.g. `"NBN 100/20"`, `"NBN 25/8.5"`, `"7GB"`,
+`"295GB"` — and the app now buckets these itself via
+`SavingsOffer.tierBucket` (`app_library_ledger/lib/models/offer.dart`)
+before using them for matching/filtering/grouping. The raw `tier`
+value is still shown verbatim in the UI (offer cards, detail sheet)
+for precision — only the *matching* logic buckets it.
 
-- **NBN**: `"NBN 25"`, `"NBN 50"`, `"NBN 100"`, `"NBN 500"`
-- **Mobile**: `"<20GB"`, `"20–60GB"` (⚠️ **en dash, U+2013** — not a
-  plain ASCII hyphen `-`), `"60GB+"`, `"Unlimited"`
+- Send whatever real tier string the provider actually publishes —
+  don't pre-bucket or invent a fake 4-value tier on the scraper side.
+- The bucketing rule (NBN): extract the first number in the string
+  (the download speed) → ≤37 buckets to `"NBN 25"`, ≤75 to `"NBN 50"`,
+  ≤300 to `"NBN 100"`, anything higher (500/700/1000/2000+) buckets to
+  `"NBN 500"` (i.e. "500 and up" is one bucket for matching purposes,
+  even though the raw tier shown to the user is still precise).
+- The bucketing rule (mobile): `"Unlimited"` stays as-is; otherwise
+  extract the GB number → `<20` buckets to `"<20GB"`, `20–59` to
+  `"20–60GB"`, `60+` to `"60GB+"`.
+- If a provider ever publishes a tier string with no parseable number
+  in it, `tierBucket` returns `null` for that offer — it still
+  displays fine, it just won't participate in tier-filtered
+  views/matching. Not a hard validation failure, the offer isn't
+  dropped.
 
 ## Content tone
 

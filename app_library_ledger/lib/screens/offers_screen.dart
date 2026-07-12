@@ -194,7 +194,7 @@ class _OffersScreenState extends State<OffersScreen> {
     var src = _allOffers;
     if (_segment == 'nbn') src = src.where((o) => o.serviceType == 'nbn').toList();
     else if (_segment == 'mobile') src = src.where((o) => o.serviceType == 'mobile').toList();
-    return src.where((o) => o.tier != null).map((o) => o.tier!).toSet();
+    return src.where((o) => o.tierBucket != null).map((o) => o.tierBucket!).toSet();
   }
 
   bool get _showTierPicker {
@@ -330,7 +330,7 @@ class _OffersScreenState extends State<OffersScreen> {
       if (_segment == 'nbn') return o.serviceType == 'nbn';
       if (_segment == 'mobile') return o.serviceType == 'mobile';
       return true;
-    }).where((o) => o.tier == tier).toList();
+    }).where((o) => o.tierBucket == tier).toList();
     switch (_sortMode) {
       case 1: offers.sort((a, b) => a.promoPrice.compareTo(b.promoPrice));
       case 2: offers.sort((a, b) => a.regularPrice.compareTo(b.regularPrice));
@@ -647,7 +647,7 @@ class _OffersScreenState extends State<OffersScreen> {
     if (offer.techType != null) specParts.add(offer.techType!);
     if (offer.dataGB != null && offer.dataGB! > 0) specParts.add('${offer.dataGB}GB data');
 
-    final tierMatch = _anchorEntry?.serviceTier != null && offer.tier != null && _anchorEntry!.serviceTier == offer.tier;
+    final tierMatch = _anchorEntry?.serviceTier != null && offer.tierBucket != null && _anchorEntry!.serviceTier == offer.tierBucket;
 
     showModalBottomSheet(
       context: context,
@@ -766,7 +766,7 @@ class _OfferCard extends StatelessWidget {
     final avg = offer.avgFirstYear;
     final userCost = anchor?.subscriptionCost;
     final userTier = anchor?.serviceTier;
-    final tierMatch = userTier != null && offer.tier != null && userTier == offer.tier;
+    final tierMatch = userTier != null && offer.tierBucket != null && userTier == offer.tierBucket;
     final delta = userCost != null ? avg - userCost : null;
     final isFlat = offer.promoMonths <= 0 || offer.promoPrice == offer.regularPrice;
 

@@ -11,7 +11,7 @@ class OffersService {
   OffersService._internal();
 
   static const String offersUrl =
-      'https://raw.githubusercontent.com/jeevanshah/app-library-ledger/main/offers.json';
+      'https://cdn.jsdelivr.net/gh/jeevanshah/au-plans-scraper@main/data/deals.json';
   static const _cacheKey = 'offers_cache';
   static const _timeKey = 'offers_cache_time';
 
