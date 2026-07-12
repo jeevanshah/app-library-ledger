@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../models/app_model.dart';
 import '../models/catalog_entry.dart';
@@ -64,6 +67,26 @@ class _AddAppScreenState extends State<AddAppScreen>
   String? _serviceType; // "nbn", "mobile", or null
   String? _serviceTier; // user's speed/data tier
 
+  // Search-first entry
+  List<CatalogEntry> _searchResults = [];
+  Timer? _searchDebounce;
+  List<AppEntry> _existingApps = [];
+
+  // Promo-first branching (manual/no-catalog-match path only)
+  bool? _manualPromoChoice; // null = unanswered
+  bool _promoCostUnsure = false;
+  bool _promoEndsUnsure = false;
+  bool _regularPriceUnsure = false;
+  bool _promoPriceCustom = false;
+  bool _regularPriceCustom = false;
+  static const _commonPrices = [9.99, 14.99, 19.99, 29.99, 39.99, 49.99];
+
+  // OCR bill scan
+  bool _scanningBill = false;
+  final Set<String> _ocrFilledFields = {}; // 'cost' | 'renewal' | 'name'
+
+  bool get _isManualPricingPath => _matchedCatalog == null || _useCustomCost;
+
   double? get _parsedCost => double.tryParse(_costCtrl.text.trim());
 
   CatalogEntry? _findMatchingCatalogEntry() {
@@ -113,8 +136,9 @@ class _AddAppScreenState extends State<AddAppScreen>
         _expanded = true;
       }
       // If saved cost doesn't match any tier, start in custom mode
+      final match = _findMatchingCatalogEntry();
+      _matchedCatalog = match;
       if (a.subscriptionCost != null) {
-        final match = _findMatchingCatalogEntry();
         final costStr = a.subscriptionCost!.toStringAsFixed(2);
         final matchesTier =
             match != null &&
@@ -122,6 +146,16 @@ class _AddAppScreenState extends State<AddAppScreen>
               (t) => t.monthlyPrice.toStringAsFixed(2) == costStr,
             );
         if (!matchesTier) _useCustomCost = true;
+      }
+      // Editing an entry already on the manual pricing path: the promo
+      // question is already answered, and "not sure yet" back-fills from
+      // whichever fields are null so re-opening doesn't show a false error.
+      if (match == null || _useCustomCost) {
+        _manualPromoChoice = a.isPromotionalPrice;
+        if (a.isPromotionalPrice) {
+          _promoEndsUnsure = a.promotionEndsDate == null;
+          _regularPriceUnsure = a.regularPrice == null;
+        }
       }
     } else if (widget.prefillServiceType == null) {
       // New, unassisted entry: default to a calm "Uncategorized" bucket
@@ -173,15 +207,264 @@ class _AddAppScreenState extends State<AddAppScreen>
           _useCustomCost = false;
         });
       }
+      _ocrFilledFields.remove('name');
+      _searchDebounce?.cancel();
+      _searchDebounce = Timer(const Duration(milliseconds: 150), () {
+        if (!mounted) return;
+        setState(() => _searchResults = _searchCatalog(_nameCtrl.text.trim()));
+      });
     });
 
     _loadQuickEntries();
   }
 
+  List<CatalogEntry> _searchCatalog(String query) {
+    if (query.isEmpty) return const [];
+    final q = query.toLowerCase();
+    final catalog = CatalogService();
+    final tracked = _existingApps;
+    final startsWith = <CatalogEntry>[];
+    final contains = <CatalogEntry>[];
+    for (final e in (catalog.appScanEntries + catalog.webManualEntries)) {
+      if (e.isTrackedIn(tracked)) continue;
+      final name = e.name.toLowerCase();
+      if (name.startsWith(q)) {
+        startsWith.add(e);
+      } else if (name.contains(q)) {
+        contains.add(e);
+      }
+    }
+    return [...startsWith, ...contains].take(6).toList();
+  }
+
+  Future<void> _selectSearchResult(CatalogEntry e) async {
+    await _fillFromCatalog(e);
+    if (!mounted) return;
+    FocusScope.of(context).unfocus();
+    _scrollToBilling();
+  }
+
+  // ── OCR bill scan ──────────────────────────────────────────────
+  // On-device only (google_mlkit_text_recognition) — the photo and any
+  // recognized text never leave the phone. Every guessed field is
+  // clearly marked ("Scanned — check this") and stays fully editable;
+  // this can only pre-fill, never silently commit wrong data.
+
+  Future<void> _scanBill() async {
+    if (_scanningBill) return;
+    HapticFeedback.selectionClick();
+    XFile? photo;
+    try {
+      photo = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 90,
+      );
+    } catch (_) {
+      return;
+    }
+    if (photo == null || !mounted) return;
+
+    var cancelled = false;
+    setState(() => _scanningBill = true);
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogCtx) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            backgroundColor: AppTokens.cardBg,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTokens.rCard),
+            ),
+            content: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: AppTokens.gold),
+                ),
+                const SizedBox(width: 16),
+                Text(
+                  'Reading your bill…',
+                  style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 14),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  cancelled = true;
+                  Navigator.pop(dialogCtx);
+                },
+                child: Text('Cancel', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    String recognizedText = '';
+    try {
+      final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
+      final result = await recognizer.processImage(InputImage.fromFilePath(photo.path));
+      await recognizer.close();
+      recognizedText = result.text;
+    } catch (_) {
+      recognizedText = '';
+    }
+
+    if (!mounted) return;
+    setState(() => _scanningBill = false);
+    if (cancelled) return;
+    if (Navigator.of(context).canPop()) Navigator.pop(context);
+
+    if (recognizedText.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Couldn't read any text from that photo — try again or fill it in manually.")),
+      );
+      return;
+    }
+    await _applyOcrResult(recognizedText);
+  }
+
+  Future<void> _applyOcrResult(String rawText) async {
+    final lines = rawText
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+    var anyGuess = false;
+
+    // Name — catalog fuzzy match only; never guessed from free text (a
+    // "prominent" line is often the biller's own brand, not the service).
+    final nameMatch = _guessCatalogName(lines);
+    if (nameMatch != null) {
+      await _fillFromCatalog(nameMatch);
+      if (!mounted) return;
+      _ocrFilledFields.add('name');
+      anyGuess = true;
+    }
+
+    // Price — overrides whatever generic tier default _fillFromCatalog
+    // may have just set, since this is the actual scanned figure.
+    final priceGuess = _guessPrice(lines);
+    if (priceGuess != null) {
+      setState(() {
+        _costCtrl.text = priceGuess.toStringAsFixed(2);
+        _useCustomCost = true;
+        _promoPriceCustom = true;
+        _ocrFilledFields.add('cost');
+      });
+      anyGuess = true;
+    }
+
+    // Date — only a future date is trusted as a renewal-date guess.
+    final dateGuess = _guessDate(lines);
+    if (dateGuess != null) {
+      setState(() {
+        _renewal = dateGuess;
+        _userTouchedDate = true;
+        _ocrFilledFields.add('renewal');
+      });
+      anyGuess = true;
+    }
+
+    if (!mounted) return;
+    if (!anyGuess) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Couldn't confidently read the details — fill them in below.")),
+      );
+    } else {
+      HapticFeedback.mediumImpact();
+      _scrollToBilling();
+    }
+  }
+
+  CatalogEntry? _guessCatalogName(List<String> lines) {
+    final catalog = CatalogService();
+    final entries = catalog.appScanEntries + catalog.webManualEntries;
+    for (final line in lines) {
+      final lower = line.toLowerCase();
+      for (final e in entries) {
+        if (e.name.length >= 3 && lower.contains(e.name.toLowerCase())) return e;
+      }
+    }
+    return null;
+  }
+
+  double? _guessPrice(List<String> lines) {
+    final priceRegex = RegExp(r'\$?\s?(\d{1,4}(?:,\d{3})*\.\d{2})');
+    const preferKeywords = [
+      'total', 'amount due', 'charged', 'monthly', 'plan cost', 'you paid',
+    ];
+    const avoidKeywords = ['subtotal', 'tax', 'gst', 'vat'];
+
+    double? preferred;
+    double? fallback;
+    for (final line in lines) {
+      final lower = line.toLowerCase();
+      final match = priceRegex.firstMatch(line);
+      if (match == null) continue;
+      final value = double.tryParse(match.group(1)!.replaceAll(',', ''));
+      if (value == null) continue;
+      if (avoidKeywords.any(lower.contains)) continue;
+      if (preferred == null && preferKeywords.any(lower.contains)) preferred = value;
+      if (fallback == null || value > fallback) fallback = value;
+    }
+    return preferred ?? fallback;
+  }
+
+  static const _ocrMonths = {
+    'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+    'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+  };
+
+  DateTime? _guessDate(List<String> lines) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final numericRegex = RegExp(r'\b(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})\b');
+    final namedMonthRegex = RegExp(
+      r'\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})\b',
+      caseSensitive: false,
+    );
+
+    final candidates = <DateTime>[];
+    for (final line in lines) {
+      for (final m in numericRegex.allMatches(line)) {
+        final day = int.tryParse(m.group(1)!);
+        final month = int.tryParse(m.group(2)!);
+        var year = int.tryParse(m.group(3)!);
+        if (day == null || month == null || year == null) continue;
+        if (year < 100) year += 2000;
+        if (month < 1 || month > 12 || day < 1 || day > 31) continue;
+        try {
+          candidates.add(DateTime(year, month, day));
+        } catch (_) {}
+      }
+      for (final m in namedMonthRegex.allMatches(line)) {
+        final day = int.tryParse(m.group(1)!);
+        final month = _ocrMonths[m.group(2)!.toLowerCase()];
+        final year = int.tryParse(m.group(3)!);
+        if (day == null || month == null || year == null) continue;
+        try {
+          candidates.add(DateTime(year, month, day));
+        } catch (_) {}
+      }
+    }
+
+    final future = candidates.where((d) => d.isAfter(today)).toList()..sort();
+    return future.isEmpty ? null : future.first;
+  }
+
   Future<void> _loadQuickEntries() async {
+    final catalog = CatalogService();
+    await catalog.loadCatalog();
     final tracked = await StorageService().getApps();
     if (!mounted) return;
-    final catalog = CatalogService();
+    _existingApps = tracked;
     final entries = <CatalogEntry>[];
     for (final e in (catalog.appScanEntries + catalog.webManualEntries)) {
       if (e.pricingTiers.isEmpty || e.isTrackedIn(tracked)) continue;
@@ -208,6 +491,7 @@ class _AddAppScreenState extends State<AddAppScreen>
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _nameCtrl.dispose();
     _notesCtrl.dispose();
     _costCtrl.dispose();
@@ -321,7 +605,7 @@ class _AddAppScreenState extends State<AddAppScreen>
     bool costMissing = false;
     bool dateMissing = false;
     if (_isSub) {
-      costMissing = _parsedCost == null;
+      costMissing = _parsedCost == null && !_promoCostUnsure;
       dateMissing = _renewal == null;
     }
     setState(() {
@@ -902,6 +1186,260 @@ class _AddAppScreenState extends State<AddAppScreen>
     );
   }
 
+  // ── Promo-first branching (manual pricing path) ──────────────────
+
+  Widget _promoQuestionCard() {
+    Widget option(String label, bool value) {
+      final sel = _manualPromoChoice == value;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            setState(() {
+              _manualPromoChoice = value;
+              _isPromo = value;
+            });
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              gradient: sel ? AppTokens.brandGradient : null,
+              color: sel ? null : AppTokens.fieldBg,
+              borderRadius: BorderRadius.circular(AppTokens.rInput),
+              border: Border.all(color: sel ? Colors.transparent : AppTokens.hairline),
+            ),
+            child: Text(
+              label,
+              style: GoogleFonts.plusJakartaSans(
+                color: sel ? Colors.white : AppTokens.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return _labeled(
+      'Is this on a promo price?',
+      Row(children: [option('No', false), const SizedBox(width: 10), option('Yes', true)]),
+    );
+  }
+
+  Widget _notSureChip(VoidCallback onTap) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: Text(
+          'Not sure yet',
+          style: GoogleFonts.plusJakartaSans(
+            color: AppTokens.textMuted,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _priceChipField({
+    required String label,
+    required TextEditingController controller,
+    required bool useCustom,
+    required ValueChanged<bool> onUseCustomChanged,
+    bool allowUnsure = false,
+    bool unsure = false,
+    VoidCallback? onUnsureToggle,
+    String? ocrFieldKey,
+    bool error = false,
+    String? requiredHelper,
+  }) {
+    if (unsure) {
+      return _labeled(
+        label,
+        GestureDetector(
+          onTap: onUnsureToggle,
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: AppTokens.fieldBg,
+              borderRadius: BorderRadius.circular(AppTokens.rInput),
+              border: Border.all(color: AppTokens.hairline),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  "Not sure yet — tap to add",
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppTokens.textPlaceholder,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    final ocrGuessed = ocrFieldKey != null && _ocrFilledFields.contains(ocrFieldKey);
+    return _labeled(
+      label,
+      useCustom
+          ? _textField(
+              controller: controller,
+              hint: '0.00',
+              prefixText: '\$ ',
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: GoogleFonts.spaceGrotesk(
+                color: AppTokens.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+              onChanged: (_) => _ocrFilledFields.remove(ocrFieldKey),
+            )
+          : Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ..._commonPrices.map((p) {
+                  final str = p.toStringAsFixed(2);
+                  final sel = controller.text == str;
+                  return GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        controller.text = str;
+                        _ocrFilledFields.remove(ocrFieldKey);
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: sel ? AppTokens.gold.withValues(alpha: 0.12) : AppTokens.fieldBg,
+                        borderRadius: BorderRadius.circular(AppTokens.rPill),
+                        border: Border.all(
+                          color: sel ? AppTokens.gold.withValues(alpha: 0.3) : AppTokens.hairline,
+                        ),
+                      ),
+                      child: Text(
+                        '\$$str',
+                        style: GoogleFonts.spaceGrotesk(
+                          color: sel ? AppTokens.gold : AppTokens.textPrimary,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      controller.text = '';
+                      onUseCustomChanged(true);
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: AppTokens.fieldBg,
+                      borderRadius: BorderRadius.circular(AppTokens.rPill),
+                      border: Border.all(color: AppTokens.hairline),
+                    ),
+                    child: Text(
+                      'Custom',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: AppTokens.textMuted,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                if (allowUnsure && onUnsureToggle != null) _notSureChip(onUnsureToggle),
+              ],
+            ),
+      helper: ocrGuessed
+          ? 'Scanned — check this'
+          : (error ? requiredHelper : null),
+      error: error,
+    );
+  }
+
+  Widget _promoDateField({
+    required String label,
+    required String helper,
+    required DateTime? date,
+    required IconData icon,
+    required bool unsure,
+    required ValueChanged<DateTime> onPicked,
+    required VoidCallback onUnsureToggle,
+    String? ocrFieldKey,
+  }) {
+    final ocrGuessed = ocrFieldKey != null && _ocrFilledFields.contains(ocrFieldKey);
+    if (unsure) {
+      return _labeled(
+        label,
+        GestureDetector(
+          onTap: onUnsureToggle,
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: AppTokens.fieldBg,
+              borderRadius: BorderRadius.circular(AppTokens.rInput),
+              border: Border.all(color: AppTokens.hairline),
+            ),
+            child: Text(
+              'Not sure yet — tap to add',
+              style: GoogleFonts.plusJakartaSans(
+                color: AppTokens.textPlaceholder,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+        helper: helper,
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _labeled(
+          label,
+          _dateField(
+            date: date,
+            placeholder: 'Select date',
+            icon: icon,
+            onTap: () => _pickDate(
+              current: date,
+              onPicked: (d) {
+                _ocrFilledFields.remove(ocrFieldKey);
+                onPicked(d);
+              },
+            ),
+          ),
+          helper: ocrGuessed ? 'Scanned — check this' : helper,
+          error: false,
+        ),
+        _notSureChip(onUnsureToggle),
+      ],
+    );
+  }
+
   Widget _costCycleRow() {
     // Never mutate _matchedCatalog in build — computed by listener + init
     final match = _matchedCatalog;
@@ -1071,8 +1609,242 @@ class _AddAppScreenState extends State<AddAppScreen>
     );
   }
 
-  // C2 — Quick Add from catalog
-  Widget _quickAddSection() {
+  // ── Search-first entry (replaces the plain "App Name" field in add mode) ──
+
+  Widget _searchSection() {
+    final hasQuery = _nameCtrl.text.trim().isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppTokens.padContent),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(key: _nameKey, child: _searchField()),
+          if (_nameError)
+            Padding(
+              padding: const EdgeInsets.only(top: 6, left: 2),
+              child: Text(
+                'Name is required',
+                style: GoogleFonts.plusJakartaSans(
+                  color: AppTokens.danger,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          const SizedBox(height: 14),
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 220),
+            sizeCurve: Curves.easeOutCubic,
+            crossFadeState: hasQuery
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
+            firstChild: _searchResultsList(),
+            secondChild: _suggestedStrip(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _searchField() {
+    final matched = _matchedCatalog;
+    return Container(
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: AppTokens.fieldBg,
+        borderRadius: BorderRadius.circular(AppTokens.rInput),
+        border: Border.all(
+          color: _nameError ? AppTokens.danger : AppTokens.hairline,
+        ),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              child: matched != null
+                  ? _iconForCatalog(matched, size: 28)
+                  : const Icon(
+                      Icons.search_rounded,
+                      key: ValueKey('search-icon'),
+                      color: AppTokens.textFaint,
+                      size: 22,
+                    ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: _nameCtrl,
+              cursorColor: AppTokens.brandEnd,
+              style: GoogleFonts.plusJakartaSans(
+                color: AppTokens.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: "Search 60+ services — try 'Netflix' or 'gym'",
+                hintStyle: GoogleFonts.plusJakartaSans(
+                  color: AppTokens.textPlaceholder,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              onChanged: (_) {
+                if (_nameError) setState(() => _nameError = false);
+              },
+            ),
+          ),
+          if (matched != null)
+            TweenAnimationBuilder<double>(
+              key: ValueKey(matched.id),
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.elasticOut,
+              builder: (_, v, child) => Transform.scale(scale: v, child: child),
+              child: const Icon(
+                Icons.check_circle_rounded,
+                color: AppTokens.success,
+                size: 20,
+              ),
+            )
+          else if (_nameCtrl.text.isNotEmpty)
+            GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                _nameCtrl.clear();
+              },
+              child: const Icon(
+                Icons.close_rounded,
+                color: AppTokens.textFaint,
+                size: 18,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _searchResultsList() {
+    if (_searchResults.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          "No match in our catalog — that's fine, just fill in the details below.",
+          style: GoogleFonts.plusJakartaSans(
+            color: AppTokens.textMuted,
+            fontSize: 12.5,
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        for (final e in _searchResults) _searchResultTile(e),
+      ],
+    );
+  }
+
+  Widget _searchResultTile(CatalogEntry e) {
+    final priceMin = e.pricingTiers.isNotEmpty
+        ? e.pricingTiers.first.monthlyPrice
+        : null;
+    return GestureDetector(
+      onTap: () => _selectSearchResult(e),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: AppTokens.fieldBg,
+          borderRadius: BorderRadius.circular(AppTokens.rInput),
+          border: Border.all(color: AppTokens.hairline),
+        ),
+        child: Row(
+          children: [
+            _iconForCatalog(e, size: 40),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    e.name,
+                    style: GoogleFonts.plusJakartaSans(
+                      color: AppTokens.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    e.category,
+                    style: GoogleFonts.plusJakartaSans(
+                      color: AppTokens.textMuted,
+                      fontSize: 11.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (priceMin != null)
+              Text(
+                'from \$${priceMin.toStringAsFixed(2)}',
+                style: GoogleFonts.spaceGrotesk(
+                  color: AppTokens.textMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _entryPointLink({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: AppTokens.gold),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: GoogleFonts.plusJakartaSans(
+                color: AppTokens.gold,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _goScanPhone() async {
+    HapticFeedback.selectionClick();
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const DiscoveryScreen(fromOnboarding: false)),
+    );
+    if (result == true && mounted) Navigator.pop(context, true);
+  }
+
+  // Empty-query state: suggested catalog entries + alternate entry points
+  Widget _suggestedStrip() {
     final quickEntries = _quickEntries;
 
     return Column(
@@ -1083,7 +1855,7 @@ class _AddAppScreenState extends State<AddAppScreen>
           child: Row(
             children: [
               Text(
-                'QUICK ADD',
+                'SUGGESTED',
                 style: GoogleFonts.plusJakartaSans(
                   color: AppTokens.textFaint,
                   fontSize: 12,
@@ -1092,40 +1864,19 @@ class _AddAppScreenState extends State<AddAppScreen>
                 ),
               ),
               const Spacer(),
-              GestureDetector(
-                onTap: () async {
-                  HapticFeedback.selectionClick();
-                  final result = await Navigator.push<bool>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          const DiscoveryScreen(fromOnboarding: false),
-                    ),
-                  );
-                  if (result == true && mounted) Navigator.pop(context, true);
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.wifi_tethering_rounded,
-                        size: 14,
-                        color: AppTokens.gold,
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        'Scan my phone',
-                        style: GoogleFonts.plusJakartaSans(
-                          color: AppTokens.gold,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
+              Opacity(
+                opacity: _scanningBill ? 0.5 : 1,
+                child: _entryPointLink(
+                  icon: Icons.receipt_long_rounded,
+                  label: 'Scan a bill',
+                  onTap: _scanBill,
                 ),
+              ),
+              const SizedBox(width: 4),
+              _entryPointLink(
+                icon: Icons.wifi_tethering_rounded,
+                label: 'Scan my phone',
+                onTap: _goScanPhone,
               ),
             ],
           ),
@@ -1146,7 +1897,7 @@ class _AddAppScreenState extends State<AddAppScreen>
                   ? e.pricingTiers.first.monthlyPrice
                   : 0.0;
               return GestureDetector(
-                onTap: () => _fillFromCatalog(e),
+                onTap: () => _selectSearchResult(e),
                 child: Container(
                   width: 92,
                   padding: const EdgeInsets.all(10),
@@ -1291,8 +2042,8 @@ class _AddAppScreenState extends State<AddAppScreen>
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               padding: const EdgeInsets.only(bottom: 24),
               children: [
-                if (!isEdit) _quickAddSection(),
-                if (!isEdit) const SizedBox(height: 20),
+                if (!isEdit) _searchSection(),
+                if (!isEdit) const SizedBox(height: 6),
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppTokens.padContent,
@@ -1300,20 +2051,22 @@ class _AddAppScreenState extends State<AddAppScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(key: _nameKey, child: _labeled(
-                        'App Name',
-                        _textField(
-                          controller: _nameCtrl,
-                          hint: 'e.g. Netflix',
+                      if (isEdit) ...[
+                        Container(key: _nameKey, child: _labeled(
+                          'App Name',
+                          _textField(
+                            controller: _nameCtrl,
+                            hint: 'e.g. Netflix',
+                            error: _nameError,
+                            onChanged: (_) {
+                              if (_nameError) setState(() => _nameError = false);
+                            },
+                          ),
+                          helper: _nameError ? 'Name is required' : null,
                           error: _nameError,
-                          onChanged: (_) {
-                            if (_nameError) setState(() => _nameError = false);
-                          },
-                        ),
-                        helper: _nameError ? 'Name is required' : null,
-                        error: _nameError,
-                      )),
-                      const SizedBox(height: 16),
+                        )),
+                        const SizedBox(height: 16),
+                      ],
                       _categoryField(),
                       const SizedBox(height: 16),
                       _switchRow(
@@ -1332,175 +2085,309 @@ class _AddAppScreenState extends State<AddAppScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const SizedBox(height: 16),
-                            Container(
-                              key: _billingKey,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(
-                                  AppTokens.rInput,
+                            if (!_isManualPricingPath) ...[
+                              // Catalog-tier path: pick a tier, optional
+                              // collapsed promo toggle — unchanged.
+                              Container(
+                                key: _billingKey,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(
+                                    AppTokens.rInput,
+                                  ),
+                                ),
+                                child: AnimatedBuilder(
+                                  animation: _highlightCtrl,
+                                  builder: (_, child) {
+                                    final glow = _highlightCtrl.value * 0.12;
+                                    return Container(
+                                      decoration: BoxDecoration(
+                                        color: AppTokens.gold.withValues(
+                                          alpha: glow,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          AppTokens.rInput + 4,
+                                        ),
+                                      ),
+                                      padding: const EdgeInsets.all(10),
+                                      child: child,
+                                    );
+                                  },
+                                  child: _costCycleRow(),
                                 ),
                               ),
-                              child: AnimatedBuilder(
-                                animation: _highlightCtrl,
-                                builder: (_, child) {
-                                  final glow = _highlightCtrl.value * 0.12;
-                                  return Container(
-                                    decoration: BoxDecoration(
-                                      color: AppTokens.gold.withValues(
-                                        alpha: glow,
-                                      ),
-                                      borderRadius: BorderRadius.circular(
-                                        AppTokens.rInput + 4,
-                                      ),
-                                    ),
-                                    padding: const EdgeInsets.all(10),
-                                    child: child,
-                                  );
-                                },
-                                child: _costCycleRow(),
-                              ),
-                            ),
-                            if (widget.prefillServiceType != null) ...[
-                              const SizedBox(height: 16),
-                              _serviceTypePicker(),
-                              const SizedBox(height: 16),
-                            ],
-                            Container(key: _renewalKey, child: _labeled(
-                              'Next renewal date',
-                              _dateField(
-                                date: _renewal,
-                                placeholder: 'Select date',
+                              if (widget.prefillServiceType != null) ...[
+                                const SizedBox(height: 16),
+                                _serviceTypePicker(),
+                                const SizedBox(height: 16),
+                              ],
+                              Container(key: _renewalKey, child: _labeled(
+                                'Next renewal date',
+                                _dateField(
+                                  date: _renewal,
+                                  placeholder: 'Select date',
+                                  error: _renewalError,
+                                  onTap: () => _pickDate(
+                                    current: _renewal,
+                                    onPicked: (d) => setState(() {
+                                      _renewal = d;
+                                      _renewalError = false;
+                                    }),
+                                  ),
+                                ),
+                                helper: _renewalError
+                                    ? 'Renewal date is required'
+                                    : null,
                                 error: _renewalError,
-                                onTap: () => _pickDate(
-                                  current: _renewal,
-                                  onPicked: (d) => setState(() {
-                                    _renewal = d;
-                                    _renewalError = false;
-                                  }),
+                              )),
+                              const SizedBox(height: 12),
+                              // C4 — Progressive disclosure
+                              GestureDetector(
+                                onTap: () =>
+                                    setState(() => _expanded = !_expanded),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        _expanded
+                                            ? Icons.expand_less_rounded
+                                            : Icons.expand_more_rounded,
+                                        color: AppTokens.textMuted,
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Got a promo price? Don\'t miss when it ends',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          color: AppTokens.textMuted,
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                              helper: _renewalError
-                                  ? 'Renewal date is required'
-                                  : null,
-                              error: _renewalError,
-                            )),
-                            const SizedBox(height: 12),
-                            // C4 — Progressive disclosure
-                            GestureDetector(
-                              onTap: () =>
-                                  setState(() => _expanded = !_expanded),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 10,
-                                ),
-                                child: Row(
+                              AnimatedCrossFade(
+                                duration: const Duration(milliseconds: 260),
+                                sizeCurve: Curves.easeOutCubic,
+                                crossFadeState: _expanded
+                                    ? CrossFadeState.showFirst
+                                    : CrossFadeState.showSecond,
+                                firstChild: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Icon(
-                                      _expanded
-                                          ? Icons.expand_less_rounded
-                                          : Icons.expand_more_rounded,
-                                      color: AppTokens.textMuted,
-                                      size: 18,
+                                    const SizedBox(height: 16),
+                                    _switchRow(
+                                      title: 'Promotional price',
+                                      subtitle: 'Discounted rate for a limited time',
+                                      value: _isPromo,
+                                      onChanged: (v) =>
+                                          setState(() => _isPromo = v),
                                     ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'Got a promo price? Don\'t miss when it ends',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        color: AppTokens.textMuted,
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w600,
+                                    AnimatedCrossFade(
+                                      duration: const Duration(milliseconds: 260),
+                                      sizeCurve: Curves.easeOutCubic,
+                                      crossFadeState: _isPromo
+                                          ? CrossFadeState.showFirst
+                                          : CrossFadeState.showSecond,
+                                      firstChild: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const SizedBox(height: 16),
+                                          _labeled(
+                                            'Regular price',
+                                            _textField(
+                                              controller: _regularCtrl,
+                                              hint: '0.00',
+                                              prefixText: '\$ ',
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                    decimal: true,
+                                                  ),
+                                              style: GoogleFonts.spaceGrotesk(
+                                                color: AppTokens.textPrimary,
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w600,
+                                                fontFeatures: const [
+                                                  FontFeature.tabularFigures(),
+                                                ],
+                                              ),
+                                            ),
+                                            helper: 'Price after the promo ends.',
+                                          ),
+                                          const SizedBox(height: 16),
+                                          _labeled(
+                                            'Promotion end date',
+                                            _dateField(
+                                              date: _promoEnds,
+                                              placeholder: 'Select date',
+                                              icon: Icons.timer_off_rounded,
+                                              onTap: () => _pickDate(
+                                                current: _promoEnds,
+                                                onPicked: (d) => setState(
+                                                  () => _promoEnds = d,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      secondChild: const SizedBox(
+                                        width: double.infinity,
                                       ),
                                     ),
                                   ],
                                 ),
+                                secondChild: const SizedBox(
+                                  width: double.infinity,
+                                ),
                               ),
-                            ),
-                            AnimatedCrossFade(
-                              duration: const Duration(milliseconds: 260),
-                              sizeCurve: Curves.easeOutCubic,
-                              crossFadeState: _expanded
-                                  ? CrossFadeState.showFirst
-                                  : CrossFadeState.showSecond,
-                              firstChild: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const SizedBox(height: 16),
-                                  _switchRow(
-                                    title: 'Promotional price',
-                                    subtitle: 'Discounted rate for a limited time',
-                                    value: _isPromo,
-                                    onChanged: (v) =>
-                                        setState(() => _isPromo = v),
-                                  ),
-                                  AnimatedCrossFade(
-                                    duration: const Duration(milliseconds: 260),
-                                    sizeCurve: Curves.easeOutCubic,
-                                    crossFadeState: _isPromo
-                                        ? CrossFadeState.showFirst
-                                        : CrossFadeState.showSecond,
-                                    firstChild: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                            ] else ...[
+                              // Manual/no-catalog-match path: ask promo
+                              // status first, branch the rest of the form.
+                              _promoQuestionCard(),
+                              if (_manualPromoChoice != null) ...[
+                                const SizedBox(height: 16),
+                                if (_manualPromoChoice == false) ...[
+                                  // No — fast path, stays minimal.
+                                  Container(
+                                    key: _billingKey,
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        const SizedBox(height: 16),
-                                        _labeled(
-                                          'Regular price',
-                                          _textField(
-                                            controller: _regularCtrl,
-                                            hint: '0.00',
-                                            prefixText: '\$ ',
-                                            keyboardType:
-                                                const TextInputType.numberWithOptions(
-                                                  decimal: true,
-                                                ),
-                                            style: GoogleFonts.spaceGrotesk(
-                                              color: AppTokens.textPrimary,
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w600,
-                                              fontFeatures: const [
-                                                FontFeature.tabularFigures(),
-                                              ],
-                                            ),
-                                          ),
-                                          helper: 'Price after the promo ends.',
-                                        ),
-                                        const SizedBox(height: 16),
-                                        _labeled(
-                                          'Promotion end date',
-                                          _dateField(
-                                            date: _promoEnds,
-                                            placeholder: 'Select date',
-                                            icon: Icons.timer_off_rounded,
-                                            onTap: () => _pickDate(
-                                              current: _promoEnds,
-                                              onPicked: (d) => setState(
-                                                () => _promoEnds = d,
-                                              ),
-                                            ),
+                                        Expanded(
+                                          child: _priceChipField(
+                                            label: 'Cost',
+                                            controller: _costCtrl,
+                                            useCustom: _promoPriceCustom,
+                                            onUseCustomChanged: (v) =>
+                                                setState(() => _promoPriceCustom = v),
+                                            error: _costError,
+                                            requiredHelper: 'Cost is required',
+                                            ocrFieldKey: 'cost',
                                           ),
                                         ),
+                                        const SizedBox(width: 12),
+                                        SizedBox(width: 130, child: _labeled('Billing cycle', _cyclePill())),
                                       ],
                                     ),
-                                    secondChild: const SizedBox(
-                                      width: double.infinity,
-                                    ),
                                   ),
                                   const SizedBox(height: 16),
-                                  _labeled(
-                                    'Notes',
-                                    _textField(
-                                      controller: _notesCtrl,
-                                      hint:
-                                          'e.g. Family plan, shared with 3 people',
-                                      minLines: 3,
-                                      maxLines: 5,
+                                  Container(key: _renewalKey, child: _labeled(
+                                    'Next renewal date',
+                                    _dateField(
+                                      date: _renewal,
+                                      placeholder: 'Select date',
+                                      error: _renewalError,
+                                      onTap: () => _pickDate(
+                                        current: _renewal,
+                                        onPicked: (d) => setState(() {
+                                          _renewal = d;
+                                          _renewalError = false;
+                                        }),
+                                      ),
                                     ),
+                                    helper: _renewalError
+                                        ? 'Renewal date is required'
+                                        : null,
+                                    error: _renewalError,
+                                  )),
+                                ] else ...[
+                                  // Yes — promo price, then the two dates
+                                  // (kept visually and semantically distinct),
+                                  // then price after promo.
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        child: _priceChipField(
+                                          label: 'Promo price',
+                                          controller: _costCtrl,
+                                          useCustom: _promoPriceCustom,
+                                          onUseCustomChanged: (v) =>
+                                              setState(() => _promoPriceCustom = v),
+                                          allowUnsure: true,
+                                          unsure: _promoCostUnsure,
+                                          onUnsureToggle: () => setState(() {
+                                            _promoCostUnsure = !_promoCostUnsure;
+                                            if (_promoCostUnsure) _costCtrl.clear();
+                                          }),
+                                          error: _costError,
+                                          requiredHelper: 'Cost is required',
+                                          ocrFieldKey: 'cost',
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      SizedBox(width: 130, child: _labeled('Billing cycle', _cyclePill())),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Container(key: _renewalKey, child: _labeled(
+                                    'Next bill date',
+                                    _dateField(
+                                      date: _renewal,
+                                      placeholder: 'Select date',
+                                      error: _renewalError,
+                                      onTap: () => _pickDate(
+                                        current: _renewal,
+                                        onPicked: (d) => setState(() {
+                                          _renewal = d;
+                                          _renewalError = false;
+                                          _ocrFilledFields.remove('renewal');
+                                        }),
+                                      ),
+                                    ),
+                                    helper: _renewalError
+                                        ? 'Renewal date is required'
+                                        : (_ocrFilledFields.contains('renewal')
+                                            ? 'Scanned — check this'
+                                            : 'Recurs every billing cycle'),
+                                    error: _renewalError,
+                                  )),
+                                  const SizedBox(height: 16),
+                                  _promoDateField(
+                                    label: 'Promo ends on',
+                                    helper: 'One-off — the date your discount stops',
+                                    date: _promoEnds,
+                                    icon: Icons.timer_off_rounded,
+                                    unsure: _promoEndsUnsure,
+                                    onPicked: (d) => setState(() => _promoEnds = d),
+                                    onUnsureToggle: () => setState(() {
+                                      _promoEndsUnsure = !_promoEndsUnsure;
+                                      if (_promoEndsUnsure) _promoEnds = null;
+                                    }),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _priceChipField(
+                                    label: 'Price after promo',
+                                    controller: _regularCtrl,
+                                    useCustom: _regularPriceCustom,
+                                    onUseCustomChanged: (v) =>
+                                        setState(() => _regularPriceCustom = v),
+                                    allowUnsure: true,
+                                    unsure: _regularPriceUnsure,
+                                    onUnsureToggle: () => setState(() {
+                                      _regularPriceUnsure = !_regularPriceUnsure;
+                                      if (_regularPriceUnsure) _regularCtrl.clear();
+                                    }),
                                   ),
                                 ],
-                              ),
-                              secondChild: const SizedBox(
-                                width: double.infinity,
-                              ),
-                            ),
+                                const SizedBox(height: 16),
+                                _labeled(
+                                  'Notes',
+                                  _textField(
+                                    controller: _notesCtrl,
+                                    hint: 'e.g. Family plan, shared with 3 people',
+                                    minLines: 3,
+                                    maxLines: 5,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ],
                         ),
                         secondChild: const SizedBox(width: double.infinity),
