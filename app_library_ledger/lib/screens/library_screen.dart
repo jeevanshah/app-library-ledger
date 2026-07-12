@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_model.dart';
 import '../models/category_model.dart';
 import '../models/offer.dart';
+import '../models/spend_ledger_entry.dart';
 import '../services/storage_service.dart';
 import '../services/notification_service.dart';
 import '../services/analytics_service.dart';
@@ -20,7 +21,9 @@ import '../services/offers_matcher.dart';
 import '../services/offer_relevance.dart';
 import '../theme/app_tokens.dart';
 import 'add_app_screen.dart';
+import 'calendar_screen.dart';
 import 'discovery_screen.dart';
+import 'spend_history_screen.dart';
 import 'settings_screen.dart';
 import 'offers_screen.dart';
 
@@ -29,7 +32,6 @@ final _fmt = NumberFormat.currency(
   symbol: '\$',
   decimalDigits: 2,
 );
-final _dateFmt = DateFormat('MMM d');
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -52,6 +54,7 @@ class _LibraryScreenState extends State<LibraryScreen>
   Set<String> _dismissedPromoResolve = {};
   List<MatchedOffer> _matchedOffers = [];
   List<SavingsOffer> _offers = [];
+  List<SpendLedgerEntry> _ledger = [];
   bool _offersEnabled = false;
   Set<String> _seenOfferIds = {};
   bool _refreshing = false;
@@ -72,7 +75,6 @@ class _LibraryScreenState extends State<LibraryScreen>
   final _scrollCtrl = ScrollController();
   late final AnimationController _counterCtrl;
   late final Animation<double> _counterAnim;
-  bool _cliffExpanded = false;
   bool _insightsExpanded = false;
 
   @override
@@ -172,10 +174,13 @@ class _LibraryScreenState extends State<LibraryScreen>
         _offers = [];
       }
 
+      final ledger = await StorageService().getSpendLedger();
+
       if (!mounted) return;
       setState(() {
         _apps = apps;
         _cats = cats;
+        _ledger = ledger;
         _loading = false;
       });
       _counterCtrl.forward(from: 0);
@@ -198,6 +203,16 @@ class _LibraryScreenState extends State<LibraryScreen>
       MaterialPageRoute(builder: (_) => const DiscoveryScreen(fromOnboarding: false)),
     );
     if (ok == true) _refresh();
+  }
+
+  void _goSpendHistory() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            SpendHistoryScreen(apps: _apps, ledger: _ledger, cats: _cats),
+      ),
+    );
   }
 
   Widget _emptyLibraryState() {
@@ -921,9 +936,6 @@ class _LibraryScreenState extends State<LibraryScreen>
                     onEdit: _goEdit,
                     cats: _cats,
                     onRefresh: _refresh,
-                    cliffExpanded: _cliffExpanded,
-                    onToggleCliff: () =>
-                        setState(() => _cliffExpanded = !_cliffExpanded),
                     insightsExpanded: _insightsExpanded,
                     onToggleInsights: () =>
                         setState(() => _insightsExpanded = !_insightsExpanded),
@@ -931,6 +943,8 @@ class _LibraryScreenState extends State<LibraryScreen>
                     offersEnabled: _offersEnabled,
                     onOpenOffers: () => setState(() => _tab = 3),
                     offers: _offers,
+                    ledger: _ledger,
+                    onOpenSpendHistory: _goSpendHistory,
                   ),
                   // ── Settings Tab ──
                   const SettingsScreen(),
@@ -1387,6 +1401,219 @@ class _LibraryScreenState extends State<LibraryScreen>
 
 // ═══════════════════════════════════════════════════════════════
 
+class _MiniMonthPreview extends StatelessWidget {
+  final List<AppEntry> apps;
+  final AnalyticsService analytics;
+  final List<Category> cats;
+  final List<SpendLedgerEntry> ledger;
+  const _MiniMonthPreview({
+    required this.apps,
+    required this.analytics,
+    required this.cats,
+    required this.ledger,
+  });
+
+  List<DateTime?> _buildGridDays(DateTime month) {
+    final first = DateTime(month.year, month.month, 1);
+    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+    final leadingBlanks = first.weekday - 1; // Mon=1..Sun=7 -> 0..6
+    final cells = <DateTime?>[
+      ...List<DateTime?>.filled(leadingBlanks, null),
+      for (var d = 1; d <= daysInMonth; d++) DateTime(month.year, month.month, d),
+    ];
+    while (cells.length % 7 != 0) {
+      cells.add(null);
+    }
+    return cells;
+  }
+
+  Color _dotColor(CalendarEventKind kind) => switch (kind) {
+    CalendarEventKind.renewal => AppTokens.success,
+    CalendarEventKind.promoEnd => AppTokens.warning,
+    CalendarEventKind.projectedPastBilling => AppTokens.info,
+  };
+
+  Widget _dot(CalendarEventKind kind) {
+    final color = _dotColor(kind);
+    final hollow = kind == CalendarEventKind.projectedPastBilling;
+    return Container(
+      width: 3,
+      height: 3,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: hollow ? Colors.transparent : color,
+        border: hollow ? Border.all(color: color, width: 0.8) : null,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final month = DateTime(now.year, now.month);
+    final monthStart = DateTime(month.year, month.month, 1);
+    final monthEnd = DateTime(month.year, month.month + 1, 0);
+    final events = analytics.getCalendarEvents(
+      apps,
+      rangeStart: monthStart,
+      rangeEnd: monthEnd,
+      ledger: ledger,
+    );
+    final cells = _buildGridDays(month);
+    const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CalendarScreen(apps: apps, cats: cats, ledger: ledger),
+        ),
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppTokens.cardBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTokens.hairline),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Calendar',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppTokens.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  DateFormat('MMM yyyy').format(month),
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppTokens.textMuted,
+                    fontSize: 11,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppTokens.textFaint,
+                  size: 14,
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: labels
+                  .map(
+                    (l) => Expanded(
+                      child: Center(
+                        child: Text(
+                          l,
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppTokens.textFaint,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+            for (var w = 0; w < cells.length ~/ 7; w++)
+              Row(
+                children: [
+                  for (var i = 0; i < 7; i++)
+                    Expanded(
+                      child: _buildCell(cells[w * 7 + i], events.byDay, now),
+                    ),
+                ],
+              ),
+            if (events.all.isEmpty) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    color: AppTokens.success,
+                    size: 12,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    'Nothing due this month',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: AppTokens.success,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCell(
+    DateTime? day,
+    Map<DateTime, List<CalendarEvent>> byDay,
+    DateTime today,
+  ) {
+    if (day == null) return const SizedBox(height: 22);
+    final isToday =
+        day.year == today.year && day.month == today.month && day.day == today.day;
+    final kinds = {for (final e in byDay[day] ?? const <CalendarEvent>[]) e.kind}
+        .toList();
+    return SizedBox(
+      height: 22,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 15,
+            height: 15,
+            alignment: Alignment.center,
+            decoration: isToday
+                ? BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppTokens.gold, width: 1),
+                  )
+                : null,
+            child: Text(
+              '${day.day}',
+              style: GoogleFonts.spaceGrotesk(
+                color: isToday ? AppTokens.gold : AppTokens.textPrimary,
+                fontSize: 9.5,
+                fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ),
+          if (kinds.isNotEmpty)
+            SizedBox(
+              height: 4,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (var i = 0; i < kinds.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 2),
+                    _dot(kinds[i]),
+                  ],
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DashboardView extends StatelessWidget {
   final List<AppEntry> apps;
   final AnalyticsService analytics;
@@ -1396,14 +1623,14 @@ class _DashboardView extends StatelessWidget {
   final void Function(AppEntry) onEdit;
   final List<Category> cats;
   final VoidCallback onRefresh;
-  final bool cliffExpanded;
-  final VoidCallback onToggleCliff;
   final bool insightsExpanded;
   final VoidCallback onToggleInsights;
   final List<MatchedOffer> matchedOffers;
   final bool offersEnabled;
   final VoidCallback onOpenOffers;
   final List<SavingsOffer> offers;
+  final List<SpendLedgerEntry> ledger;
+  final VoidCallback onOpenSpendHistory;
 
   const _DashboardView({
     required this.apps,
@@ -1414,14 +1641,14 @@ class _DashboardView extends StatelessWidget {
     required this.onEdit,
     required this.cats,
     required this.onRefresh,
-    required this.cliffExpanded,
-    required this.onToggleCliff,
     required this.insightsExpanded,
     required this.onToggleInsights,
     required this.matchedOffers,
     required this.offersEnabled,
     required this.onOpenOffers,
     required this.offers,
+    required this.ledger,
+    required this.onOpenSpendHistory,
   });
 
   @override
@@ -1448,14 +1675,6 @@ class _DashboardView extends StatelessWidget {
     final healthFactorCount = healthInsight.isNotEmpty
         ? healthInsight.first.message.split('\n').length
         : 0;
-    final coming = analytics.getComingUp(apps);
-    final promoEntries = coming
-        .where((e) => e['label'] == 'Promo ends')
-        .toList();
-    final promoTotal = promoEntries.fold<double>(
-      0,
-      (s, e) => s + (e['amount'] as double),
-    );
     final savings = analytics.getActivePromoSavings(apps);
 
     return ListView(
@@ -1520,137 +1739,10 @@ class _DashboardView extends StatelessWidget {
         ),
         const SizedBox(height: 16),
 
-        // Coming Up: merged near-term timeline + promo-cliff summary
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppTokens.cardBg,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppTokens.hairline),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Coming Up (30 days)',
-                style: GoogleFonts.plusJakartaSans(
-                  color: AppTokens.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              if (promoEntries.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(
-                  '${promoEntries.length} promo(s) ending — spend rises ${_fmt.format(promoTotal)}/mo',
-                  style: GoogleFonts.plusJakartaSans(
-                    color: AppTokens.gold,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 10),
-              if (coming.isEmpty)
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.check_circle_rounded,
-                      color: AppTokens.success,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Nothing due in the next 30 days',
-                      style: GoogleFonts.plusJakartaSans(
-                        color: AppTokens.success,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                )
-              else ...[
-                ...coming.take(cliffExpanded ? coming.length : 4).map((e) {
-                  final d = e['date'] as DateTime;
-                  final days = d.difference(DateTime.now()).inDays;
-                  final urg = AppTokens.urgency(days);
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: GestureDetector(
-                      onTap: () {
-                        final entry = apps
-                            .where((a) => a.id == e['entryId'])
-                            .firstOrNull;
-                        if (entry != null) onEdit(entry);
-                      },
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 42,
-                            child: Text(
-                              _dateFmt.format(d),
-                              style: GoogleFonts.spaceGrotesk(
-                                color: AppTokens.textMuted,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          Container(
-                            width: 6,
-                            height: 6,
-                            margin: const EdgeInsets.only(right: 8),
-                            decoration: BoxDecoration(
-                              color: urg?.fg ?? AppTokens.textMuted,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          Expanded(
-                            child: Text(
-                              '${e['name']} · ${e['label']}',
-                              style: GoogleFonts.plusJakartaSans(
-                                color: AppTokens.textPrimary,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            _fmt.format(e['amount'] as double),
-                            style: GoogleFonts.spaceGrotesk(
-                              color: urg?.fg ?? AppTokens.textMuted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures(),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }),
-                if (coming.length > 4 && !cliffExpanded)
-                  GestureDetector(
-                    onTap: onToggleCliff,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        '+${coming.length - 4} more',
-                        style: GoogleFonts.plusJakartaSans(
-                          color: AppTokens.brandEnd,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ],
-          ),
-        ),
+        // Calendar preview — replaces the old "Coming Up" list with a
+        // month-at-a-glance view; tapping anywhere drills into the full
+        // CalendarScreen.
+        _MiniMonthPreview(apps: apps, analytics: analytics, cats: cats, ledger: ledger),
         const SizedBox(height: 14),
 
         // Savings tally
@@ -1885,6 +1977,42 @@ class _DashboardView extends StatelessWidget {
               ),
             ),
           ),
+        if (offersEnabled && matchedOffers.isNotEmpty)
+          const SizedBox(height: 14),
+
+        // Spending History dashboard entry
+        GestureDetector(
+          onTap: onOpenSpendHistory,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTokens.cardBg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTokens.hairline),
+            ),
+            child: Row(
+              children: [
+                _iconBadge(Icons.bar_chart_rounded, AppTokens.gold),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Spending History',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: AppTokens.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppTokens.textMuted,
+                  size: 18,
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }

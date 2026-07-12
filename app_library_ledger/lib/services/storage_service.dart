@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_model.dart';
 import '../models/category_model.dart';
+import '../models/spend_ledger_entry.dart';
 
 class StorageService {
   static const String _appsKey = 'apps';
   static const String _categoriesKey = 'categories';
+  static const String _ledgerKey = 'spend_ledger';
 
   static final StorageService _instance = StorageService._internal();
 
@@ -101,6 +103,74 @@ class StorageService {
   Future<void> _saveCategories(List<Category> categories) async {
     final json = jsonEncode(categories.map((e) => e.toJson()).toList());
     await _prefs.setString(_categoriesKey, json);
+  }
+
+  // Spend ledger methods
+
+  Future<List<SpendLedgerEntry>> getSpendLedger() async {
+    final json = _prefs.getString(_ledgerKey);
+    if (json == null) return [];
+    final List<dynamic> decoded = jsonDecode(json);
+    return decoded.map((e) => SpendLedgerEntry.fromJson(e)).toList();
+  }
+
+  Future<void> appendLedgerEntry(SpendLedgerEntry entry) async {
+    final ledger = await getSpendLedger();
+    ledger.add(entry);
+    await _saveSpendLedger(ledger);
+  }
+
+  Future<void> _saveSpendLedger(List<SpendLedgerEntry> ledger) async {
+    final json = jsonEncode(ledger.map((e) => e.toJson()).toList());
+    await _prefs.setString(_ledgerKey, json);
+  }
+
+  /// Runs once per app launch (see main.dart): for every active
+  /// subscription whose renewal date has already passed, logs a real
+  /// "billed" ledger entry at the price/cycle known at the time and
+  /// rolls the date forward — turning a stale date into an accurate
+  /// one and building real spend history going forward. Capped per
+  /// entry so a long-neglected app can't flood the ledger in one pass;
+  /// any remainder catches up on the next launch.
+  Future<void> reconcileBilling() async {
+    const maxCatchUpCycles = 24;
+    final apps = await getApps();
+    final ledger = await getSpendLedger();
+    final now = DateTime.now();
+    var appsChanged = false;
+    var ledgerChanged = false;
+
+    for (var i = 0; i < apps.length; i++) {
+      var a = apps[i];
+      if (!a.isActiveSubscription ||
+          a.nextRenewalDate == null ||
+          a.billingCycle == null) {
+        continue;
+      }
+      var cycles = 0;
+      while (a.nextRenewalDate!.isBefore(now) && cycles < maxCatchUpCycles) {
+        ledger.add(
+          SpendLedgerEntry(
+            entryId: a.id,
+            appName: a.name,
+            date: a.nextRenewalDate!,
+            amount: a.subscriptionCost ?? 0,
+            kind: LedgerEventKind.billed,
+            category: a.category,
+          ),
+        );
+        ledgerChanged = true;
+        a = a.copyWith(
+          nextRenewalDate: defaultRenewalDate(a.billingCycle!, a.nextRenewalDate!),
+        );
+        appsChanged = true;
+        cycles++;
+      }
+      apps[i] = a;
+    }
+
+    if (appsChanged) await _saveApps(apps);
+    if (ledgerChanged) await _saveSpendLedger(ledger);
   }
 
   List<Category> _defaultCategories() {

@@ -16,6 +16,11 @@ void main() async {
   final storageService = StorageService();
   await storageService.init();
   try {
+    await storageService.reconcileBilling();
+  } catch (e) {
+    debugPrint('Billing reconciliation failed: $e');
+  }
+  try {
     await NotificationService().init();
   } catch (e) {
     debugPrint('Notification init failed: $e');

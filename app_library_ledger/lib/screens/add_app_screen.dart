@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../models/app_model.dart';
 import '../models/catalog_entry.dart';
 import '../models/category_model.dart';
+import '../models/spend_ledger_entry.dart';
 import '../services/app_icon_service.dart';
 import '../services/catalog_service.dart';
 import '../services/storage_service.dart';
@@ -370,6 +371,25 @@ class _AddAppScreenState extends State<AddAppScreen>
       serviceTier: _serviceTier,
       createdAt: widget.appToEdit?.createdAt,
     );
+
+    final oldCost = widget.appToEdit?.subscriptionCost;
+    if (widget.appToEdit != null &&
+        _isSub &&
+        oldCost != null &&
+        cost != null &&
+        (oldCost - cost).abs() > 0.001) {
+      await StorageService().appendLedgerEntry(
+        SpendLedgerEntry(
+          entryId: app.id,
+          appName: app.name,
+          date: DateTime.now(),
+          amount: cost,
+          previousAmount: oldCost,
+          kind: LedgerEventKind.priceChanged,
+          category: app.category,
+        ),
+      );
+    }
 
     if (widget.appToEdit != null) {
       await NotificationService().cancelReminders(widget.appToEdit!.id);

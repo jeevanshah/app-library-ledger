@@ -715,7 +715,7 @@ class _OffersScreenState extends State<OffersScreen> {
                   _dtlRow('Your current plan, same 12 months', _fmt.format(anchorCost * 12), false, muted: true),
                 const SizedBox(height: AppTokens.gapItem),
                 Row(children: [
-                  Expanded(child: Text('Ends ${_dateFmt.format(offer.validUntil)} \u00B7 affiliate', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11))),
+                  Expanded(child: Text(offer.validUntil != null ? 'Ends ${_dateFmt.format(offer.validUntil!)} \u00B7 affiliate' : 'Ongoing \u00B7 affiliate', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11))),
                   const SizedBox(width: 12),
                   SizedBox(
                     height: 44,
@@ -760,8 +760,8 @@ class _OfferCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final daysLeft = offer.validUntil.difference(now).inDays;
-    final urgent = daysLeft <= 7;
+    final daysLeft = offer.validUntil?.difference(now).inDays;
+    final urgent = daysLeft != null && daysLeft <= 7;
     final isNew = offer.postedAt != null && now.difference(offer.postedAt!).inDays <= 7;
     final avg = offer.avgFirstYear;
     final userCost = anchor?.subscriptionCost;
@@ -786,14 +786,31 @@ class _OfferCard extends StatelessWidget {
           Text(_fmt.format(avg), style: GoogleFonts.spaceGrotesk(color: AppTokens.textStrong, fontSize: 20, fontWeight: FontWeight.w500, fontFeatures: const [FontFeature.tabularFigures()])),
           const SizedBox(width: 4), Text('/mo avg first year', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
           const Spacer(),
-          if (delta != null && !anchorNotSure) Text(delta == 0 ? '\$0.00 vs yours' : '${delta < 0 ? '\u2212' : '+'}${_fmt.format(delta.abs())}/mo vs yours', style: GoogleFonts.plusJakartaSans(color: delta < 0 ? AppTokens.success : AppTokens.textMuted, fontSize: 11, fontWeight: delta < 0 ? FontWeight.w600 : FontWeight.w400)),
+          if (delta != null && !anchorNotSure)
+            delta == 0
+                ? Text('Same as yours', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11))
+                : Text.rich(TextSpan(children: [
+                    TextSpan(text: _fmt.format(delta.abs()), style: GoogleFonts.plusJakartaSans(color: AppTokens.gold, fontSize: 11, fontWeight: FontWeight.w700)),
+                    TextSpan(text: delta < 0 ? ' less than yours' : ' more than yours', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
+                  ])),
         ]),
         const SizedBox(height: 6),
-        Text(isFlat ? _fmt.format(offer.regularPrice) + ' flat \u00B7 no intro pricing' : '${_fmt.format(offer.promoPrice)} for ${offer.promoMonths} mo \u00B7 then ${_fmt.format(offer.regularPrice)}/mo', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
+        Text.rich(TextSpan(children: isFlat
+            ? [
+                TextSpan(text: _fmt.format(offer.regularPrice), style: GoogleFonts.plusJakartaSans(color: AppTokens.gold, fontSize: 11, fontWeight: FontWeight.w700)),
+                TextSpan(text: ' flat \u00B7 no intro pricing', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
+              ]
+            : [
+                TextSpan(text: _fmt.format(offer.promoPrice), style: GoogleFonts.plusJakartaSans(color: AppTokens.gold, fontSize: 11, fontWeight: FontWeight.w700)),
+                TextSpan(text: ' for ', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
+                TextSpan(text: '${offer.promoMonths} mo', style: GoogleFonts.plusJakartaSans(color: AppTokens.gold, fontSize: 11, fontWeight: FontWeight.w700)),
+                TextSpan(text: ' \u00B7 then ', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
+                TextSpan(text: '${_fmt.format(offer.regularPrice)}/mo', style: GoogleFonts.plusJakartaSans(color: AppTokens.gold, fontSize: 11, fontWeight: FontWeight.w700)),
+              ])),
         const SizedBox(height: 10),
         Container(padding: const EdgeInsets.only(top: 10), decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppTokens.hairline))),
           child: Row(children: [
-            Expanded(child: Text(isFlat ? 'Ongoing \u00B7 affiliate' : 'Ends ${_dateFmt.format(offer.validUntil)} \u00B7 affiliate', style: GoogleFonts.plusJakartaSans(color: urgent && !isFlat ? AppTokens.warning : AppTokens.textMuted, fontSize: 11, fontWeight: urgent && !isFlat ? FontWeight.w500 : FontWeight.w400))),
+            Expanded(child: Text((isFlat || offer.validUntil == null) ? 'Ongoing \u00B7 affiliate' : 'Ends ${_dateFmt.format(offer.validUntil!)} \u00B7 affiliate', style: GoogleFonts.plusJakartaSans(color: urgent && !isFlat ? AppTokens.warning : AppTokens.textMuted, fontSize: 11, fontWeight: urgent && !isFlat ? FontWeight.w500 : FontWeight.w400))),
             const SizedBox(width: 8),
             SizedBox(height: 38, child: DecoratedBox(decoration: BoxDecoration(gradient: AppTokens.goldGradient, borderRadius: BorderRadius.circular(AppTokens.rInput)),
               child: Material(color: Colors.transparent, child: InkWell(borderRadius: BorderRadius.circular(AppTokens.rInput),
