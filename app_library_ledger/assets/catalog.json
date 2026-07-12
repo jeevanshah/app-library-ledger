@@ -1093,5 +1093,392 @@
       }
     ],
     "domain": "mynrma.com.au"
+  },
+  {
+    "id": "telstra",
+    "name": "Telstra",
+    "packageName": "com.telstra.mobile.android.mytelstra",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Mobile SIM (starter)", "monthlyPrice": 45.0, "currency": "AUD" },
+      { "tierName": "NBN 50", "monthlyPrice": 90.0, "currency": "AUD" }
+    ],
+    "domain": "telstra.com.au"
+  },
+  {
+    "id": "optus",
+    "name": "Optus",
+    "packageName": "au.com.optus.selfservice",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Mobile SIM (starter)", "monthlyPrice": 40.0, "currency": "AUD" },
+      { "tierName": "NBN 50", "monthlyPrice": 79.0, "currency": "AUD" }
+    ],
+    "domain": "optus.com.au"
+  },
+  {
+    "id": "vodafone-au",
+    "name": "Vodafone",
+    "packageName": "au.com.vodafone.mobile.gss",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Mobile SIM (starter)", "monthlyPrice": 35.0, "currency": "AUD" },
+      { "tierName": "NBN 50", "monthlyPrice": 75.0, "currency": "AUD" }
+    ],
+    "domain": "vodafone.com.au"
+  },
+  {
+    "id": "tpg",
+    "name": "TPG",
+    "packageName": "com.tpg.dev",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Mobile (50GB)", "monthlyPrice": 35.0, "currency": "AUD" },
+      { "tierName": "NBN 50", "monthlyPrice": 69.99, "currency": "AUD" }
+    ],
+    "domain": "tpg.com.au"
+  },
+  {
+    "id": "dodo",
+    "name": "Dodo",
+    "packageName": "com.dodo.app.twa",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Mobile (25GB)", "monthlyPrice": 25.0, "currency": "AUD" },
+      { "tierName": "NBN 50", "monthlyPrice": 87.99, "currency": "AUD" }
+    ],
+    "domain": "dodo.com"
+  },
+  {
+    "id": "iinet",
+    "name": "iiNet",
+    "packageName": "au.net.iinet.support",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "NBN 50", "monthlyPrice": 79.99, "currency": "AUD" },
+      { "tierName": "NBN 100", "monthlyPrice": 99.99, "currency": "AUD" }
+    ],
+    "domain": "iinet.net.au"
+  },
+  {
+    "id": "aussie-broadband",
+    "name": "Aussie Broadband",
+    "packageName": "org.aussiebroadband.myaussie",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "NBN 25/10", "monthlyPrice": 83.0, "currency": "AUD" },
+      { "tierName": "NBN 50/20", "monthlyPrice": 95.0, "currency": "AUD" },
+      { "tierName": "NBN 100/20", "monthlyPrice": 99.0, "currency": "AUD" }
+    ],
+    "domain": "aussiebroadband.com.au",
+    "serviceType": "nbn"
+  },
+  {
+    "id": "superloop",
+    "name": "Superloop",
+    "packageName": "com.superloop.app",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "NBN 100", "monthlyPrice": 97.0, "currency": "AUD" }
+    ],
+    "domain": "superloop.com"
+  },
+  {
+    "id": "exetel",
+    "name": "Exetel",
+    "packageName": "com.exetel.app",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "NBN 500", "monthlyPrice": 80.0, "currency": "AUD" },
+      { "tierName": "Mobile (20GB)", "monthlyPrice": 20.0, "currency": "AUD" }
+    ],
+    "domain": "exetel.com.au"
+  },
+  {
+    "id": "belong",
+    "name": "Belong",
+    "packageName": "com.belong",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Mobile SIM (starter)", "monthlyPrice": 35.0, "currency": "AUD" },
+      { "tierName": "NBN 50", "monthlyPrice": 75.0, "currency": "AUD" }
+    ],
+    "domain": "belong.com.au"
+  },
+  {
+    "id": "amaysim",
+    "name": "amaysim",
+    "packageName": "au.com.amaysim.android",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Mobile SIM (starter)", "monthlyPrice": 25.0, "currency": "AUD" },
+      { "tierName": "NBN 50", "monthlyPrice": 69.0, "currency": "AUD" }
+    ],
+    "domain": "amaysim.com.au"
+  },
+  {
+    "id": "tangerine",
+    "name": "Tangerine",
+    "packageName": "au.com.more.myaccount",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "NBN 50", "monthlyPrice": 89.9, "currency": "AUD" },
+      { "tierName": "NBN 100", "monthlyPrice": 99.9, "currency": "AUD" }
+    ],
+    "domain": "tangerinetelecom.com.au",
+    "serviceType": "nbn"
+  },
+  {
+    "id": "spintel",
+    "name": "SpinTel",
+    "packageName": "com.spintelapp",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Mobile SIM (22GB)", "monthlyPrice": 22.0, "currency": "AUD" },
+      { "tierName": "NBN 50", "monthlyPrice": 69.95, "currency": "AUD" }
+    ],
+    "domain": "spintel.net.au"
+  },
+  {
+    "id": "everyday-mobile",
+    "name": "Everyday Mobile",
+    "packageName": "com.woolworths.mobile",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Mobile SIM (starter)", "monthlyPrice": 20.0, "currency": "AUD" }
+    ],
+    "domain": "everyday.com.au",
+    "serviceType": "mobile"
+  },
+  {
+    "id": "kogan-mobile",
+    "name": "Kogan Mobile",
+    "packageName": "com.kogan.m.dashboard",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Mobile SIM (starter)", "monthlyPrice": 15.0, "currency": "AUD" }
+    ],
+    "domain": "koganmobile.com.au",
+    "serviceType": "mobile"
+  },
+  {
+    "id": "boost-mobile",
+    "name": "Boost Mobile",
+    "packageName": "com.boost.mobile.myboost",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Prepaid (starter)", "monthlyPrice": 35.0, "currency": "AUD" }
+    ],
+    "domain": "boost.com.au",
+    "serviceType": "mobile"
+  },
+  {
+    "id": "aldimobile",
+    "name": "ALDImobile",
+    "packageName": "au.com.aldi.android",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Prepaid (starter)", "monthlyPrice": 20.0, "currency": "AUD" }
+    ],
+    "domain": "aldimobile.com.au",
+    "serviceType": "mobile"
+  },
+  {
+    "id": "felix-mobile",
+    "name": "felix mobile",
+    "packageName": "au.com.mach2.android",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Unlimited", "monthlyPrice": 40.0, "currency": "AUD" }
+    ],
+    "domain": "felixmobile.com.au",
+    "serviceType": "mobile"
+  },
+  {
+    "id": "southern-phone",
+    "name": "Southern Phone",
+    "packageName": "au.com.southernphone.account",
+    "category": "Utilities",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Mobile SIM (starter)", "monthlyPrice": 30.0, "currency": "AUD" }
+    ],
+    "domain": "southernphone.com.au"
+  },
+  {
+    "id": "foxtel",
+    "name": "Foxtel",
+    "packageName": "com.foxtel.epg",
+    "category": "Media / Streaming",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Foxtel iQ Essentials", "monthlyPrice": 49.0, "currency": "AUD" }
+    ],
+    "domain": "foxtel.com.au"
+  },
+  {
+    "id": "fitness-passport",
+    "name": "Fitness Passport",
+    "packageName": "com.fitnesspassport.androidapp",
+    "category": "Health / Fitness",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Standard", "monthlyPrice": 44.9, "currency": "AUD" }
+    ],
+    "domain": "fitnesspassport.com.au"
+  },
+  {
+    "id": "jetts-fitness",
+    "name": "Jetts Fitness",
+    "packageName": "com.fitnessmobileapps.jettsapp",
+    "category": "Health / Fitness",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "No lock-in", "monthlyPrice": 64.95, "currency": "AUD" }
+    ],
+    "domain": "jetts.com.au"
+  },
+  {
+    "id": "goodlife-health-clubs",
+    "name": "Goodlife Health Clubs",
+    "packageName": "com.fitlg.kubofitapp.glh",
+    "category": "Health / Fitness",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Standard", "monthlyPrice": 79.0, "currency": "AUD" }
+    ],
+    "domain": "goodlife.com.au"
+  },
+  {
+    "id": "xero",
+    "name": "Xero",
+    "packageName": "com.xero.touch",
+    "category": "Productivity",
+    "discoveryType": "app_scan",
+    "pricingTiers": [
+      { "tierName": "Starter", "monthlyPrice": 35.0, "currency": "AUD" },
+      { "tierName": "Standard", "monthlyPrice": 70.0, "currency": "AUD" },
+      { "tierName": "Premium", "monthlyPrice": 99.0, "currency": "AUD" }
+    ],
+    "domain": "xero.com"
+  },
+  {
+    "id": "moose-mobile",
+    "name": "Moose Mobile",
+    "packageName": null,
+    "category": "Utilities",
+    "discoveryType": "web_manual",
+    "pricingTiers": [
+      { "tierName": "Mobile SIM (starter)", "monthlyPrice": 20.0, "currency": "AUD" }
+    ],
+    "domain": "moosemobile.com.au",
+    "serviceType": "mobile"
+  },
+  {
+    "id": "flip-nbn",
+    "name": "Flip",
+    "packageName": null,
+    "category": "Utilities",
+    "discoveryType": "web_manual",
+    "pricingTiers": [
+      { "tierName": "NBN 50", "monthlyPrice": 65.9, "currency": "AUD" }
+    ],
+    "domain": "flip.com.au",
+    "serviceType": "nbn"
+  },
+  {
+    "id": "news-plus",
+    "name": "News.com.au Plus",
+    "packageName": null,
+    "category": "Media / Streaming",
+    "discoveryType": "web_manual",
+    "pricingTiers": [
+      { "tierName": "Plus", "monthlyPrice": 18.5, "currency": "AUD" }
+    ],
+    "domain": "news.com.au"
+  },
+  {
+    "id": "the-australian",
+    "name": "The Australian",
+    "packageName": null,
+    "category": "Media / Streaming",
+    "discoveryType": "web_manual",
+    "pricingTiers": [
+      { "tierName": "Digital", "monthlyPrice": 34.0, "currency": "AUD" }
+    ],
+    "domain": "theaustralian.com.au"
+  },
+  {
+    "id": "afr",
+    "name": "Australian Financial Review",
+    "packageName": null,
+    "category": "Media / Streaming",
+    "discoveryType": "web_manual",
+    "pricingTiers": [
+      { "tierName": "Digital", "monthlyPrice": 45.0, "currency": "AUD" }
+    ],
+    "domain": "afr.com"
+  },
+  {
+    "id": "guardian-australia",
+    "name": "Guardian Australia Supporter",
+    "packageName": null,
+    "category": "Media / Streaming",
+    "discoveryType": "web_manual",
+    "pricingTiers": [
+      { "tierName": "Supporter", "monthlyPrice": 10.0, "currency": "AUD" }
+    ],
+    "domain": "theguardian.com"
+  },
+  {
+    "id": "uber-one",
+    "name": "Uber One",
+    "packageName": null,
+    "category": "Shopping",
+    "discoveryType": "web_manual",
+    "pricingTiers": [
+      { "tierName": "Member", "monthlyPrice": 9.99, "currency": "AUD" }
+    ],
+    "domain": "uber.com"
+  },
+  {
+    "id": "doordash-pass",
+    "name": "DoorDash Pass",
+    "packageName": null,
+    "category": "Shopping",
+    "discoveryType": "web_manual",
+    "pricingTiers": [
+      { "tierName": "DashPass", "monthlyPrice": 9.99, "currency": "AUD" }
+    ],
+    "domain": "doordash.com"
+  },
+  {
+    "id": "menulog-plus",
+    "name": "Menulog+",
+    "packageName": null,
+    "category": "Shopping",
+    "discoveryType": "web_manual",
+    "pricingTiers": [
+      { "tierName": "Plus", "monthlyPrice": 9.99, "currency": "AUD" }
+    ],
+    "domain": "menulog.com.au"
   }
 ]

@@ -75,5 +75,29 @@
         <package android:name="au.com.kayosports"/>
         <package android:name="au.com.optus.sport"/>
         <package android:name="com.cbs.ca"/>
+        <package android:name="com.telstra.mobile.android.mytelstra"/>
+        <package android:name="au.com.optus.selfservice"/>
+        <package android:name="au.com.vodafone.mobile.gss"/>
+        <package android:name="com.tpg.dev"/>
+        <package android:name="com.dodo.app.twa"/>
+        <package android:name="au.net.iinet.support"/>
+        <package android:name="org.aussiebroadband.myaussie"/>
+        <package android:name="com.superloop.app"/>
+        <package android:name="com.exetel.app"/>
+        <package android:name="com.belong"/>
+        <package android:name="au.com.amaysim.android"/>
+        <package android:name="au.com.more.myaccount"/>
+        <package android:name="com.spintelapp"/>
+        <package android:name="com.woolworths.mobile"/>
+        <package android:name="com.kogan.m.dashboard"/>
+        <package android:name="com.boost.mobile.myboost"/>
+        <package android:name="au.com.aldi.android"/>
+        <package android:name="au.com.mach2.android"/>
+        <package android:name="au.com.southernphone.account"/>
+        <package android:name="com.foxtel.epg"/>
+        <package android:name="com.fitnesspassport.androidapp"/>
+        <package android:name="com.fitnessmobileapps.jettsapp"/>
+        <package android:name="com.fitlg.kubofitapp.glh"/>
+        <package android:name="com.xero.touch"/>
     </queries>
 </manifest>
