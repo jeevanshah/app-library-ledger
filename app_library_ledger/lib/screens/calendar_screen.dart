@@ -71,7 +71,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   IconData _iconFor(CalendarEventKind kind) => switch (kind) {
     CalendarEventKind.renewal => Icons.autorenew_rounded,
-    CalendarEventKind.promoEnd => Icons.trending_up_rounded,
+    CalendarEventKind.promoEnd => Icons.trending_down_rounded,
     CalendarEventKind.projectedPastBilling => Icons.help_outline_rounded,
   };
 
@@ -218,8 +218,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
       lastDate: DateTime(now.year + 10),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.dark(primary: AppTokens.gold),
+          colorScheme: const ColorScheme.dark(
+            primary: AppTokens.gold,
+            onPrimary: AppTokens.screenBg,
+            surface: AppTokens.cardBg,
+            onSurface: AppTokens.textPrimary,
+          ),
           dialogTheme: const DialogThemeData(backgroundColor: AppTokens.cardBg),
+          textTheme: GoogleFonts.plusJakartaSansTextTheme(Theme.of(ctx).textTheme)
+              .apply(bodyColor: AppTokens.textPrimary, displayColor: AppTokens.textStrong),
+          textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(foregroundColor: AppTokens.gold),
+          ),
         ),
         child: child!,
       ),
