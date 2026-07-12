@@ -69,18 +69,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
     CalendarEventKind.projectedPastBilling => AppTokens.info,
   };
 
-  Widget _dot(CalendarEventKind kind, {double size = 5}) {
-    final color = _dotColor(kind);
-    final hollow = kind == CalendarEventKind.projectedPastBilling;
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: hollow ? Colors.transparent : color,
-        border: hollow ? Border.all(color: color, width: 1.2) : null,
-      ),
-    );
+  IconData _iconFor(CalendarEventKind kind) => switch (kind) {
+    CalendarEventKind.renewal => Icons.autorenew_rounded,
+    CalendarEventKind.promoEnd => Icons.trending_up_rounded,
+    CalendarEventKind.projectedPastBilling => Icons.help_outline_rounded,
+  };
+
+  Widget _dot(CalendarEventKind kind, {double size = 9}) {
+    return Icon(_iconFor(kind), size: size, color: _dotColor(kind));
   }
 
   void _openDay(DateTime day, List<CalendarEvent> events) {
@@ -150,7 +146,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
         child: Row(
           children: [
-            _dot(e.kind, size: 8),
+            _dot(e.kind, size: 16),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -212,6 +208,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
     setState(() => _visibleMonth = DateTime(now.year, now.month));
   }
 
+  Future<void> _pickDate() async {
+    HapticFeedback.selectionClick();
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _visibleMonth,
+      firstDate: DateTime(now.year - 10),
+      lastDate: DateTime(now.year + 10),
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: const ColorScheme.dark(primary: AppTokens.gold),
+          dialogTheme: const DialogThemeData(backgroundColor: AppTokens.cardBg),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) {
+      setState(() => _visibleMonth = DateTime(picked.year, picked.month));
+    }
+  }
+
   Widget _header() {
     final now = DateTime.now();
     final isCurrentMonth =
@@ -260,13 +277,29 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ),
           ),
           Expanded(
-            child: Center(
-              child: Text(
-                DateFormat('MMMM yyyy').format(_visibleMonth),
-                style: GoogleFonts.playfairDisplay(
-                  color: AppTokens.textStrong,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
+            child: GestureDetector(
+              onTap: _pickDate,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      DateFormat('MMMM yyyy').format(_visibleMonth),
+                      style: GoogleFonts.playfairDisplay(
+                        color: AppTokens.textStrong,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(
+                      Icons.expand_more_rounded,
+                      color: AppTokens.textFaint,
+                      size: 20,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -291,7 +324,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _dot(kind, size: 7),
+        _dot(kind, size: 13),
         const SizedBox(width: 5),
         Text(
           label,
@@ -442,7 +475,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _dayCell(DateTime? day, Map<DateTime, List<CalendarEvent>> byDay) {
-    if (day == null) return const SizedBox(height: 52);
+    if (day == null) return const SizedBox(height: 56);
     final today = DateTime.now();
     final isToday =
         day.year == today.year && day.month == today.month && day.day == today.day;
@@ -470,19 +503,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
 
     final cell = SizedBox(
-      height: 52,
+      height: 56,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           numberText,
-          const SizedBox(height: 3),
+          const SizedBox(height: 2),
           SizedBox(
-            height: 6,
+            height: 11,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 for (var i = 0; i < kinds.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 3),
+                  if (i > 0) const SizedBox(width: 2),
                   _dot(kinds[i]),
                 ],
               ],
