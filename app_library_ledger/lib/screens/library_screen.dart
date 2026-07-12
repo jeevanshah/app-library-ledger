@@ -1662,19 +1662,13 @@ class _DashboardView extends StatelessWidget {
       installed: installed,
       dismissed: dismissed,
     );
-    final healthInsight = insights
-        .where((i) => i.id == 'health_score')
-        .toList();
     final otherInsights = [
-      ...insights.where((i) => i.id != 'health_score'),
+      ...insights,
       ...buildOfferSavingsInsights(apps, offers, dismissed),
     ]..sort((a, b) => b.impactPerMonth.compareTo(a.impactPerMonth));
     const kVisibleInsightCap = 3;
     final visibleInsights = otherInsights.take(kVisibleInsightCap).toList();
     final foldedInsights = otherInsights.skip(kVisibleInsightCap).toList();
-    final healthFactorCount = healthInsight.isNotEmpty
-        ? healthInsight.first.message.split('\n').length
-        : 0;
     final savings = analytics.getActivePromoSavings(apps);
 
     return ListView(
@@ -1848,8 +1842,8 @@ class _DashboardView extends StatelessWidget {
         ),
         const SizedBox(height: 14),
 
-        // Smart Insights + Health score, unified in one panel
-        if (insights.isNotEmpty) ...[
+        // Smart Insights panel
+        if (otherInsights.isNotEmpty) ...[
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -1860,14 +1854,6 @@ class _DashboardView extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ...healthInsight.map(
-                  (ins) => _insightRow(
-                    ins,
-                    onDismiss: onDismissInsight,
-                    showFactors: true,
-                    expanded: insightsExpanded,
-                  ),
-                ),
                 ...visibleInsights.map(
                   (ins) => _insightRow(
                     ins,
@@ -1884,7 +1870,7 @@ class _DashboardView extends StatelessWidget {
                             : null,
                   ),
                 ),
-                if (foldedInsights.isNotEmpty || healthFactorCount > 1) ...[
+                if (foldedInsights.isNotEmpty) ...[
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Container(height: 1, color: AppTokens.hairline),
@@ -1895,9 +1881,7 @@ class _DashboardView extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            foldedInsights.isNotEmpty
-                                ? 'Smart Insights (${foldedInsights.length})'
-                                : 'Show health details',
+                            'Smart Insights (${foldedInsights.length})',
                             style: GoogleFonts.plusJakartaSans(
                               color: AppTokens.textPrimary,
                               fontSize: 13,
@@ -2067,8 +2051,6 @@ class _DashboardView extends StatelessWidget {
     SubscriptionInsight ins, {
     required void Function(String) onDismiss,
     VoidCallback? onTap,
-    bool showFactors = false,
-    bool expanded = true,
   }) {
     final fg = switch (ins.type) {
       InsightType.danger => AppTokens.danger,
@@ -2076,8 +2058,6 @@ class _DashboardView extends StatelessWidget {
       InsightType.warning => AppTokens.warning,
       InsightType.info => AppTokens.brandEnd,
     };
-    final isHealthScore = showFactors && ins.id == 'health_score';
-    final factorLines = isHealthScore ? ins.message.split('\n') : const <String>[];
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: GestureDetector(
@@ -2100,38 +2080,14 @@ class _DashboardView extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 3),
-                  if (isHealthScore) ...[
-                    ...(expanded ? factorLines : factorLines.take(1)).map(
-                      (line) => Padding(
-                        padding: const EdgeInsets.only(bottom: 2),
-                        child: Text(
-                          line,
-                          style: GoogleFonts.plusJakartaSans(
-                            color: AppTokens.textMuted,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
+                  Text(
+                    ins.message,
+                    style: GoogleFonts.plusJakartaSans(
+                      color: AppTokens.textMuted,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w400,
                     ),
-                    if (!expanded && factorLines.length > 1)
-                      Text(
-                        '+${factorLines.length - 1} more factor${factorLines.length - 1 == 1 ? '' : 's'}',
-                        style: GoogleFonts.plusJakartaSans(
-                          color: AppTokens.textFaint,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                  ] else
-                    Text(
-                      ins.message,
-                      style: GoogleFonts.plusJakartaSans(
-                        color: AppTokens.textMuted,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
+                  ),
                 ],
               ),
             ),

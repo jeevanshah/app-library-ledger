@@ -4,12 +4,6 @@ import '../models/spend_ledger_entry.dart';
 
 enum InsightType { warning, info, success, danger }
 
-class ScoreFactor {
-  final String label;
-  final int points;
-  const ScoreFactor({required this.label, required this.points});
-}
-
 class SubscriptionInsight {
   final String id;
   final String title;
@@ -79,6 +73,13 @@ class MonthSpend {
   final double confirmed; // real ledger 'billed' entries
   final double estimated; // projected-past-billing, apps without a confirmed entry that month
   MonthSpend(this.month, this.confirmed, this.estimated);
+}
+
+class MonthProjection {
+  final DateTime month; // first of month
+  final double total; // projected total monthly cost
+  final List<String> cliffedEntryIds; // apps whose promo lapses THIS month
+  MonthProjection(this.month, this.total, this.cliffedEntryIds);
 }
 
 class AnalyticsService {
@@ -339,6 +340,47 @@ class AnalyticsService {
     return result;
   }
 
+  /// Forward-looking monthly total, starting this month, for `months`
+  /// months out. A pure projection from already-known promo end dates —
+  /// once a tracked promo's `promotionEndsDate` is reached, that app's
+  /// contribution switches from its current price to `regularPrice`.
+  /// Doesn't fabricate any future price change beyond what's already
+  /// tracked. `cliffedEntryIds` on a given month are the apps whose
+  /// effective price changed from the previous month, for drill-down.
+  List<MonthProjection> getMonthlyCostProjection(
+    List<AppEntry> apps, {
+    required int months,
+  }) {
+    final now = DateTime.now();
+    final active = apps.where((a) => a.isActiveSubscription).toList();
+    final result = <MonthProjection>[];
+    final prevCostById = <String, double>{};
+
+    for (var i = 0; i < months; i++) {
+      final m = DateTime(now.year, now.month + i, 1);
+      double total = 0;
+      final cliffed = <String>[];
+      for (final a in active) {
+        final usesRegular =
+            a.isPromotionalPrice &&
+            a.promotionEndsDate != null &&
+            a.regularPrice != null &&
+            !a.promotionEndsDate!.isAfter(m);
+        final cost = usesRegular
+            ? (a.billingCycle == 'yearly' ? a.regularPrice! / 12 : a.regularPrice!)
+            : _monthly(a);
+        total += cost;
+        final prev = prevCostById[a.id];
+        if (prev != null && (cost - prev).abs() > 0.001) {
+          cliffed.add(a.id);
+        }
+        prevCostById[a.id] = cost;
+      }
+      result.add(MonthProjection(m, total, cliffed));
+    }
+    return result;
+  }
+
   // ── D3: Savings tally ────────────────────────────────────────
 
   double getActivePromoSavings(List<AppEntry> apps) {
@@ -532,100 +574,9 @@ class AnalyticsService {
       return (DateTime.now().millisecondsSinceEpoch - ts) < (30 * 86400 * 1000);
     });
 
-    // Sort: impactPerMonth desc, health last
+    // Sort: impactPerMonth desc
     all.sort((a, b) => b.impactPerMonth.compareTo(a.impactPerMonth));
 
-    // Health score (always last) — skipped for a single, factor-free
-    // subscription: "Excellent, no issues" on one app is chrome, not
-    // information. Once there's a real factor or a 2nd subscription,
-    // it becomes a meaningful portfolio-level signal again.
-    final (score, factors) = getSubHealthScore(
-      apps,
-      uninstalled: uninstalled,
-      promos: getPromoCliff(apps),
-    );
-    if (factors.isNotEmpty || active.length >= 2) {
-      final sortedFactors = [...factors]
-        ..sort((a, b) => a.points.compareTo(b.points));
-      all.add(
-        SubscriptionInsight(
-          id: 'health_score',
-          title: 'Subscription Health: ${getHealthLabel(score)}',
-          message: sortedFactors
-              .map((f) => '${f.points} · ${f.label}')
-              .join('\n'),
-          type: score >= 75
-              ? InsightType.success
-              : score >= 50
-              ? InsightType.warning
-              : InsightType.danger,
-          impactPerMonth: score.toDouble(),
-        ),
-      );
-    }
-
     return all;
-  }
-
-  // ── I5: Explainable health score ─────────────────────────────
-
-  (double, List<ScoreFactor>) getSubHealthScore(
-    List<AppEntry> apps, {
-    List<AppEntry> uninstalled = const [],
-    List<PromoCliffEntry> promos = const [],
-  }) {
-    final active = apps.where((a) => a.isActiveSubscription).toList();
-    if (active.isEmpty) return (100, const []);
-    double score = 100;
-    final factors = <ScoreFactor>[];
-
-    final monthly = getTotalMonthlyCost(apps);
-    if (monthly > 200) {
-      score -= 25;
-      factors.add(
-        const ScoreFactor(label: 'Monthly spend over \$200', points: -25),
-      );
-    } else if (monthly > 100) {
-      score -= 15;
-      factors.add(
-        const ScoreFactor(label: 'Monthly spend over \$100', points: -15),
-      );
-    } else if (monthly > 50) {
-      score -= 5;
-      factors.add(
-        const ScoreFactor(label: 'Monthly spend over \$50', points: -5),
-      );
-    }
-
-    final uCount = (uninstalled.length).clamp(0, 3);
-    if (uCount > 0) {
-      score -= uCount * 10;
-      factors.add(
-        ScoreFactor(
-          label: '$uCount uninstalled app(s) still being paid',
-          points: -(uCount * 10),
-        ),
-      );
-    }
-
-    if (promos.isNotEmpty) {
-      score -= promos.length * 5;
-      factors.add(
-        ScoreFactor(
-          label: '${promos.length} promo(s) expiring within 60 days',
-          points: -(promos.length * 5),
-        ),
-      );
-    }
-
-    return (score.clamp(0, 100).toDouble(), factors);
-  }
-
-  String getHealthLabel(double score) {
-    if (score >= 90) return 'Excellent';
-    if (score >= 75) return 'Good';
-    if (score >= 50) return 'Fair';
-    if (score >= 30) return 'Needs Attention';
-    return 'Critical';
   }
 }

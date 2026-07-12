@@ -9,7 +9,7 @@ import '../services/analytics_service.dart';
 import '../theme/app_tokens.dart';
 import 'add_app_screen.dart';
 
-class SpendHistoryScreen extends StatelessWidget {
+class SpendHistoryScreen extends StatefulWidget {
   static const _kMonths = 6;
 
   final List<AppEntry> apps;
@@ -21,6 +21,13 @@ class SpendHistoryScreen extends StatelessWidget {
     required this.cats,
     super.key,
   });
+
+  @override
+  State<SpendHistoryScreen> createState() => _SpendHistoryScreenState();
+}
+
+class _SpendHistoryScreenState extends State<SpendHistoryScreen> {
+  int _trajectoryMonths = 3;
 
   Widget _iconBtn(BuildContext context, IconData icon, {required VoidCallback onTap}) {
     return GestureDetector(
@@ -81,14 +88,14 @@ class SpendHistoryScreen extends StatelessWidget {
   Widget _heroCard() {
     final fmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
     final now = DateTime.now();
-    final cutoff = DateTime(now.year, now.month - _kMonths + 1, 1);
-    final confirmed = ledger
+    final cutoff = DateTime(now.year, now.month - SpendHistoryScreen._kMonths + 1, 1);
+    final confirmed = widget.ledger
         .where(
           (e) => e.kind == LedgerEventKind.billed && !e.date.isBefore(cutoff),
         )
         .fold(0.0, (s, e) => s + e.amount);
     final monthsWithData = {
-      for (final e in ledger.where(
+      for (final e in widget.ledger.where(
         (e) => e.kind == LedgerEventKind.billed && !e.date.isBefore(cutoff),
       ))
         '${e.date.year}-${e.date.month}',
@@ -99,7 +106,7 @@ class SpendHistoryScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'CONFIRMED SPEND · LAST $_kMonths MO',
+            'CONFIRMED SPEND · LAST ${SpendHistoryScreen._kMonths} MO',
             style: GoogleFonts.plusJakartaSans(
               color: AppTokens.textFaint,
               fontSize: 10.5,
@@ -119,7 +126,7 @@ class SpendHistoryScreen extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             monthsWithData > 0
-                ? '$monthsWithData of $_kMonths months tracked'
+                ? '$monthsWithData of ${SpendHistoryScreen._kMonths} months tracked'
                 : 'Your spending history builds up from here',
             style: GoogleFonts.plusJakartaSans(
               color: AppTokens.textMuted,
@@ -144,9 +151,9 @@ class SpendHistoryScreen extends StatelessWidget {
   Widget _historyCard(BuildContext context) {
     final fmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
     final history = AnalyticsService().getMonthlySpendHistory(
-      apps,
-      ledger,
-      months: _kMonths,
+      widget.apps,
+      widget.ledger,
+      months: SpendHistoryScreen._kMonths,
     );
     final maxValue = history.fold(
       0.0,
@@ -278,14 +285,14 @@ class SpendHistoryScreen extends StatelessWidget {
     HapticFeedback.selectionClick();
     final monthStart = DateTime(h.month.year, h.month.month, 1);
     final monthEnd = DateTime(h.month.year, h.month.month + 1, 0);
-    final confirmedEntries = ledger.where(
+    final confirmedEntries = widget.ledger.where(
       (e) =>
           e.kind == LedgerEventKind.billed &&
           e.date.year == h.month.year &&
           e.date.month == h.month.month,
     );
     final events = AnalyticsService().getCalendarEvents(
-      apps,
+      widget.apps,
       rangeStart: monthStart,
       rangeEnd: monthEnd,
     );
@@ -390,8 +397,254 @@ class SpendHistoryScreen extends StatelessWidget {
     );
   }
 
+  // ── Price Trajectory (forward-looking) ──────────────────────────
+
+  Widget _rangeChip(int months, String label) {
+    final selected = _trajectoryMonths == months;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() => _trajectoryMonths = months);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected ? AppTokens.gold.withValues(alpha: 0.15) : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppTokens.rPill),
+          border: Border.all(
+            color: selected ? AppTokens.gold.withValues(alpha: 0.4) : AppTokens.hairline,
+          ),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.plusJakartaSans(
+            color: selected ? AppTokens.gold : AppTokens.textMuted,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _trajectoryCard(BuildContext context) {
+    final projection = AnalyticsService().getMonthlyCostProjection(
+      widget.apps,
+      months: _trajectoryMonths,
+    );
+    final values = projection.map((p) => p.total).toList();
+    final maxValue = values.fold(0.0, (m, v) => v > m ? v : m);
+    final minValue = values.isEmpty
+        ? 0.0
+        : values.fold(values.first, (m, v) => v < m ? v : m);
+
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Price Trajectory',
+                style: GoogleFonts.plusJakartaSans(
+                  color: AppTokens.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              _rangeChip(1, '1M'),
+              const SizedBox(width: 6),
+              _rangeChip(3, '3M'),
+              const SizedBox(width: 6),
+              _rangeChip(6, '6M'),
+              const SizedBox(width: 6),
+              _rangeChip(12, '1Y'),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Projected from tracked promo end dates — not a guarantee',
+            style: GoogleFonts.plusJakartaSans(
+              color: AppTokens.textFaint,
+              fontSize: 10.5,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (values.length < 2)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Text(
+                  'Not enough tracked data yet',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppTokens.textMuted,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ),
+            )
+          else
+            SizedBox(
+              height: 120,
+              child: LayoutBuilder(
+                builder: (ctx, constraints) {
+                  return GestureDetector(
+                    onTapUp: (details) {
+                      final dx = constraints.maxWidth / (values.length - 1);
+                      final idx = (details.localPosition.dx / dx)
+                          .round()
+                          .clamp(0, values.length - 1);
+                      _openTrajectoryMonth(context, projection[idx]);
+                    },
+                    child: CustomPaint(
+                      size: Size(constraints.maxWidth, 120),
+                      painter: _TrajectoryPainter(
+                        values: values,
+                        minValue: minValue,
+                        maxValue: maxValue,
+                        cliffFlags: projection.map((p) => p.cliffedEntryIds.isNotEmpty).toList(),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              for (var i = 0; i < projection.length; i++)
+                Expanded(
+                  child: Text(
+                    DateFormat('MMM').format(projection[i].month),
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.plusJakartaSans(
+                      color: AppTokens.textFaint,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openTrajectoryMonth(BuildContext context, MonthProjection p) {
+    HapticFeedback.selectionClick();
+    final active = widget.apps.where((a) => a.isActiveSubscription).toList();
+    final fmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTokens.cardBgRaised,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 32,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppTokens.hairlineStrong,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                DateFormat('MMMM yyyy').format(p.month),
+                style: GoogleFonts.playfairDisplay(
+                  color: AppTokens.textStrong,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Projected total: ${fmt.format(p.total)}',
+                style: GoogleFonts.plusJakartaSans(
+                  color: AppTokens.gold,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: AppTokens.gapItem),
+              for (final a in active) _trajectoryRow(a, p, fmt),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _trajectoryRow(AppEntry a, MonthProjection p, NumberFormat fmt) {
+    final cliffed = p.cliffedEntryIds.contains(a.id);
+    final usesRegular =
+        a.isPromotionalPrice &&
+        a.promotionEndsDate != null &&
+        a.regularPrice != null &&
+        !a.promotionEndsDate!.isAfter(p.month);
+    final cost = usesRegular
+        ? (a.billingCycle == 'yearly' ? a.regularPrice! / 12 : a.regularPrice!)
+        : AnalyticsService().getMonthlyCost(a);
+
+    return Container(
+      constraints: const BoxConstraints(minHeight: 44),
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppTokens.hairline)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  a.name,
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppTokens.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (cliffed)
+                  Text(
+                    'Price rise this month',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: AppTokens.warning,
+                      fontSize: 11,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Text(
+            fmt.format(cost),
+            style: GoogleFonts.spaceGrotesk(
+              color: cliffed ? AppTokens.warning : AppTokens.textPrimary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _priceChangesCard(BuildContext context) {
-    final changes = ledger.where((e) => e.kind == LedgerEventKind.priceChanged).toList()
+    final changes = widget.ledger.where((e) => e.kind == LedgerEventKind.priceChanged).toList()
       ..sort((a, b) => b.date.compareTo(a.date));
     if (changes.isEmpty) return const SizedBox.shrink();
     final fmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
@@ -425,7 +678,7 @@ class SpendHistoryScreen extends StatelessWidget {
     NumberFormat fmt,
     DateFormat dateFmt,
   ) {
-    final entry = apps.where((a) => a.id == c.entryId).firstOrNull;
+    final entry = widget.apps.where((a) => a.id == c.entryId).firstOrNull;
     final rose = c.previousAmount != null && c.amount > c.previousAmount!;
     final delta = c.previousAmount != null ? c.amount - c.previousAmount! : 0.0;
 
@@ -435,7 +688,7 @@ class SpendHistoryScreen extends StatelessWidget {
           : () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => AddAppScreen(categories: cats, appToEdit: entry),
+                builder: (_) => AddAppScreen(categories: widget.cats, appToEdit: entry),
               ),
             ),
       child: Row(
@@ -495,7 +748,7 @@ class SpendHistoryScreen extends StatelessWidget {
   }
 
   Widget _comingUpCard() {
-    final coming = AnalyticsService().getComingUp(apps);
+    final coming = AnalyticsService().getComingUp(widget.apps);
     if (coming.isEmpty) return const SizedBox.shrink();
     final fmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
     final dateFmt = DateFormat('MMM d');
@@ -602,7 +855,7 @@ class SpendHistoryScreen extends StatelessWidget {
           children: [
             _header(context),
             Expanded(
-              child: apps.isEmpty
+              child: widget.apps.isEmpty
                   ? _emptyState()
                   : ListView(
                       padding: const EdgeInsets.fromLTRB(22, 4, 22, 32),
@@ -611,8 +864,10 @@ class SpendHistoryScreen extends StatelessWidget {
                         const SizedBox(height: 14),
                         _historyCard(context),
                         const SizedBox(height: 14),
+                        _trajectoryCard(context),
+                        const SizedBox(height: 14),
                         _priceChangesCard(context),
-                        if (ledger.any((e) => e.kind == LedgerEventKind.priceChanged))
+                        if (widget.ledger.any((e) => e.kind == LedgerEventKind.priceChanged))
                           const SizedBox(height: 14),
                         _comingUpCard(),
                       ],
@@ -623,4 +878,79 @@ class SpendHistoryScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class _TrajectoryPainter extends CustomPainter {
+  final List<double> values;
+  final double minValue;
+  final double maxValue;
+  final List<bool> cliffFlags;
+
+  _TrajectoryPainter({
+    required this.values,
+    required this.minValue,
+    required this.maxValue,
+    required this.cliffFlags,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.isEmpty) return;
+    final range = (maxValue - minValue).abs() < 0.01 ? 1.0 : (maxValue - minValue);
+    final n = values.length;
+    final dx = n > 1 ? size.width / (n - 1) : 0.0;
+
+    Offset pointFor(int i) {
+      final x = n > 1 ? i * dx : size.width / 2;
+      final normalized = (values[i] - minValue) / range;
+      final y = (size.height - 8) - normalized * (size.height - 16);
+      return Offset(x, y.clamp(4.0, size.height - 4.0));
+    }
+
+    final points = List.generate(n, pointFor);
+
+    final fillPath = Path()..moveTo(points.first.dx, size.height);
+    for (final p in points) {
+      fillPath.lineTo(p.dx, p.dy);
+    }
+    fillPath.lineTo(points.last.dx, size.height);
+    fillPath.close();
+    canvas.drawPath(
+      fillPath,
+      Paint()
+        ..color = AppTokens.gold.withValues(alpha: 0.12)
+        ..style = PaintingStyle.fill,
+    );
+
+    final linePath = Path()..moveTo(points.first.dx, points.first.dy);
+    for (final p in points.skip(1)) {
+      linePath.lineTo(p.dx, p.dy);
+    }
+    canvas.drawPath(
+      linePath,
+      Paint()
+        ..color = AppTokens.gold
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+
+    for (var i = 0; i < n; i++) {
+      final p = points[i];
+      if (cliffFlags[i]) {
+        final dashPaint = Paint()
+          ..color = AppTokens.warning.withValues(alpha: 0.5)
+          ..strokeWidth = 1;
+        var y = 0.0;
+        while (y < size.height) {
+          canvas.drawLine(Offset(p.dx, y), Offset(p.dx, (y + 4).clamp(0, size.height)), dashPaint);
+          y += 7;
+        }
+      }
+      canvas.drawCircle(p, 3.5, Paint()..color = AppTokens.gold);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrajectoryPainter old) =>
+      old.values != values || old.minValue != minValue || old.maxValue != maxValue;
 }
