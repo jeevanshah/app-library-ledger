@@ -14,6 +14,7 @@ class OffersService {
       'https://cdn.jsdelivr.net/gh/jeevanshah/au-plans-scraper@main/data/deals.json';
   static const _cacheKey = 'offers_cache';
   static const _timeKey = 'offers_cache_time';
+  static const _cacheUrlKey = 'offers_cache_url';
 
   List<SavingsOffer>? _cached;
   DateTime? _cacheTime;
@@ -32,7 +33,13 @@ class OffersService {
     final prefs = await SharedPreferences.getInstance();
     final rawCache = prefs.getString(_cacheKey);
     final cacheTimeStr = prefs.getString(_timeKey);
-    if (!force && rawCache != null && cacheTimeStr != null) {
+    // A cache from a previous offersUrl is stale by definition, even if
+    // its timestamp looks fresh -- otherwise switching feed sources (or
+    // just changing the URL during development) silently keeps serving
+    // old data until the 12h window happens to lapse.
+    final cacheUrl = prefs.getString(_cacheUrlKey);
+    final cacheFromCurrentSource = cacheUrl == offersUrl;
+    if (!force && rawCache != null && cacheTimeStr != null && cacheFromCurrentSource) {
         final cacheTime = DateTime.tryParse(cacheTimeStr);
         if (cacheTime != null &&
             DateTime.now().difference(cacheTime).inHours < 12) {
@@ -63,6 +70,7 @@ class OffersService {
         // Cache
         await prefs.setString(_cacheKey, body);
         await prefs.setString(_timeKey, DateTime.now().toIso8601String());
+        await prefs.setString(_cacheUrlKey, offersUrl);
       }
     } catch (e) {
       debugPrint('OffersService: remote fetch failed: $e');
