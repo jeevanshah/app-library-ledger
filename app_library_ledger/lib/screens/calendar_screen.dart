@@ -394,6 +394,33 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  Widget _summaryChip(CalendarEventKind kind, String text) {
+    final color = _dotColor(kind);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(AppTokens.rPill),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(_iconFor(kind), size: 13, color: color),
+          const SizedBox(width: 5),
+          Text(
+            text,
+            style: GoogleFonts.plusJakartaSans(
+              color: color,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _summaryLine(CalendarMonthEvents events) {
     if (events.all.isEmpty) return const SizedBox.shrink();
 
@@ -405,60 +432,31 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     final confirmedTotal = renewals.fold(0.0, (s, e) => s + e.amount);
     final promoDeltaTotal = promoEnds.fold(0.0, (s, e) => s + e.amount);
-    final baseStyle = GoogleFonts.plusJakartaSans(
-      color: AppTokens.textMuted,
-      fontSize: 12,
-      fontWeight: FontWeight.w500,
-    );
+    final noConfirmed = renewals.isEmpty && promoEnds.isEmpty;
 
-    final spans = <InlineSpan>[];
-    void sep() {
-      if (spans.isNotEmpty) spans.add(TextSpan(text: '  ·  ', style: baseStyle));
-    }
-
-    if (renewals.isNotEmpty) {
-      sep();
-      spans.add(
-        TextSpan(
-          text:
-              '${renewals.length} renewal${renewals.length == 1 ? '' : 's'} · ${_fmt.format(confirmedTotal)}'
-              '${projected.isNotEmpty ? ' confirmed' : ' this month'}',
-          style: baseStyle.copyWith(color: AppTokens.success, fontWeight: FontWeight.w700),
+    final chips = <Widget>[
+      if (renewals.isNotEmpty)
+        _summaryChip(
+          CalendarEventKind.renewal,
+          '${renewals.length} renewal${renewals.length == 1 ? '' : 's'} · ${_fmt.format(confirmedTotal)}',
         ),
-      );
-    }
-    if (promoEnds.isNotEmpty) {
-      sep();
-      spans.add(
-        TextSpan(
-          text:
-              '${promoEnds.length} promo${promoEnds.length == 1 ? '' : 's'} ending '
-              '(+${_fmt.format(promoDeltaTotal)}/mo after)',
-          style: baseStyle.copyWith(color: AppTokens.warning, fontWeight: FontWeight.w700),
+      if (promoEnds.isNotEmpty)
+        _summaryChip(
+          CalendarEventKind.promoEnd,
+          '${promoEnds.length} promo${promoEnds.length == 1 ? '' : 's'} · +${_fmt.format(promoDeltaTotal)}/mo',
         ),
-      );
-    }
-    if (projected.isNotEmpty) {
-      sep();
-      final noConfirmed = renewals.isEmpty && promoEnds.isEmpty;
-      spans.add(
-        TextSpan(
-          text: noConfirmed
-              ? '${projected.length} estimated billing event${projected.length == 1 ? '' : 's'} · no confirmed charges this month'
+      if (projected.isNotEmpty)
+        _summaryChip(
+          CalendarEventKind.projectedPastBilling,
+          noConfirmed
+              ? '${projected.length} estimated · no confirmed charges'
               : '${projected.length} estimated',
-          style: baseStyle.copyWith(color: AppTokens.info, fontWeight: FontWeight.w600),
         ),
-      );
-    }
+    ];
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppTokens.padHeader, vertical: 2),
-      child: Text.rich(
-        TextSpan(children: spans),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: baseStyle,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: AppTokens.padHeader, vertical: 4),
+      child: Wrap(spacing: 8, runSpacing: 8, children: chips),
     );
   }
 
