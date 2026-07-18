@@ -14,28 +14,28 @@ class _Page {
 
 const _pages = [
   _Page(
-    'Know Your Spend',
-    'See every subscription and your true monthly total in one clean view.',
-    Icons.insights_rounded,
-    Color(0xFF38BDF8),
+    'Know What You Actually Pay',
+    'Every subscription and bill in one place — including promo prices, before they quietly reset.',
+    Icons.receipt_long_rounded,
+    AppTokens.gold,
   ),
   _Page(
-    'Never Miss a Renewal',
-    'Get a heads-up 7 days and 1 day before anything bills you again.',
-    Icons.notifications_active_rounded,
-    Color(0xFF06B6D4),
+    'Catch the Promo Cliff',
+    'Get a heads-up 7 days and 1 day before a promo ends or a bill hits — before the price jumps on you.',
+    Icons.hourglass_bottom_rounded,
+    AppTokens.gold,
   ),
   _Page(
-    'Save Smarter',
-    'Spot duplicates and waste with a health score that tells you where to cut.',
-    Icons.savings_rounded,
-    Color(0xFF10B981),
+    'Compare Real Market Offers',
+    'See live NBN and mobile plans from real providers, matched against what you pay. We show the data — you decide.',
+    Icons.compare_arrows_rounded,
+    AppTokens.gold,
   ),
   _Page(
     '100% Private',
-    'Your data is yours. Detection runs entirely on-device. Your subscriptions never leave your phone.',
+    'Detection and matching happen entirely on your device. Your subscriptions never leave your phone.',
     Icons.lock_rounded,
-    Color(0xFFEC4899),
+    AppTokens.gold,
   ),
 ];
 
@@ -122,7 +122,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                 itemCount: _pages.length,
                 itemBuilder: (_, i) {
                   final pg = _pages[i];
-                  final lighter = Color.lerp(pg.color, Colors.white, 0.18)!;
                   return SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 28),
                     child: Column(
@@ -160,30 +159,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                                     ),
                                   ),
                                 ),
-                                Container(
+                                Image.asset(
+                                  'assets/images/logo.png',
                                   width: 140,
                                   height: 140,
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [pg.color, lighter],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                    borderRadius: BorderRadius.circular(36),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: pg.color.withValues(alpha: 0.45),
-                                        blurRadius: 40,
-                                        offset: const Offset(0, 18),
-                                        spreadRadius: -12,
-                                      ),
-                                    ],
-                                  ),
-                                  child: Icon(
-                                    pg.icon,
-                                    size: 62,
-                                    color: Colors.white,
-                                  ),
                                 ),
                               ],
                             ),
@@ -193,11 +172,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                         Text(
                           pg.title,
                           textAlign: TextAlign.center,
-                          style: GoogleFonts.spaceGrotesk(
+                          style: GoogleFonts.playfairDisplay(
                             color: AppTokens.textStrong,
-                            fontSize: 27,
+                            fontSize: 28,
                             fontWeight: FontWeight.w700,
-                            letterSpacing: -0.5,
                           ),
                         ),
                         const SizedBox(height: 12),

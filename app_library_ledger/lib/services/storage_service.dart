@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_model.dart';
 import '../models/category_model.dart';
 import '../models/spend_ledger_entry.dart';
+import 'notification_service.dart';
 
 class StorageService {
   static const String _appsKey = 'apps';
@@ -139,6 +140,7 @@ class StorageService {
     final now = DateTime.now();
     var appsChanged = false;
     var ledgerChanged = false;
+    final caughtUp = <AppEntry>[];
 
     for (var i = 0; i < apps.length; i++) {
       var a = apps[i];
@@ -167,10 +169,19 @@ class StorageService {
         cycles++;
       }
       apps[i] = a;
+      if (cycles > 0) caughtUp.add(a);
     }
 
     if (appsChanged) await _saveApps(apps);
     if (ledgerChanged) await _saveSpendLedger(ledger);
+
+    for (final a in caughtUp) {
+      try {
+        await NotificationService().announceRenewalCaughtUp(a);
+      } catch (e) {
+        debugPrint('Renewal catch-up notification failed: $e');
+      }
+    }
   }
 
   List<Category> _defaultCategories() {

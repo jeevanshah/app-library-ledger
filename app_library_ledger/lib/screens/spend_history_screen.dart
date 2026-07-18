@@ -433,10 +433,22 @@ class _SpendHistoryScreenState extends State<SpendHistoryScreen> {
       months: _trajectoryMonths,
     );
     final values = projection.map((p) => p.total).toList();
-    final maxValue = values.fold(0.0, (m, v) => v > m ? v : m);
-    final minValue = values.isEmpty
+    final rawMax = values.fold(0.0, (m, v) => v > m ? v : m);
+    final rawMin = values.isEmpty
         ? 0.0
         : values.fold(values.first, (m, v) => v < m ? v : m);
+    // When projected spend is flat, min/max collapse to the same figure —
+    // pad the axis so the chart doesn't show a "$456 to $456" range.
+    final isFlat = (rawMax - rawMin).abs() < 0.01;
+    var pad = 0.0;
+    if (isFlat) {
+      pad = rawMax * 0.08;
+      if (pad < 5.0) pad = 5.0;
+      if (pad > 40.0) pad = 40.0;
+    }
+    final maxValue = rawMax + pad;
+    final minValue = rawMin - pad < 0 ? 0.0 : rawMin - pad;
+    final axisFmt = NumberFormat.currency(symbol: '\$', decimalDigits: 0);
 
     return _card(
       child: Column(
@@ -485,34 +497,66 @@ class _SpendHistoryScreenState extends State<SpendHistoryScreen> {
               ),
             )
           else
-            SizedBox(
-              height: 120,
-              child: LayoutBuilder(
-                builder: (ctx, constraints) {
-                  return GestureDetector(
-                    onTapUp: (details) {
-                      final dx = constraints.maxWidth / (values.length - 1);
-                      final idx = (details.localPosition.dx / dx)
-                          .round()
-                          .clamp(0, values.length - 1);
-                      _openTrajectoryMonth(context, projection[idx]);
-                    },
-                    child: CustomPaint(
-                      size: Size(constraints.maxWidth, 120),
-                      painter: _TrajectoryPainter(
-                        values: values,
-                        minValue: minValue,
-                        maxValue: maxValue,
-                        cliffFlags: projection.map((p) => p.cliffedEntryIds.isNotEmpty).toList(),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 40,
+                  height: 120,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        axisFmt.format(maxValue),
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTokens.textFaint,
+                          fontSize: 10,
+                        ),
                       ),
+                      Text(
+                        axisFmt.format(minValue),
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTokens.textFaint,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: SizedBox(
+                    height: 120,
+                    child: LayoutBuilder(
+                      builder: (ctx, constraints) {
+                        return GestureDetector(
+                          onTapUp: (details) {
+                            final dx = constraints.maxWidth / (values.length - 1);
+                            final idx = (details.localPosition.dx / dx)
+                                .round()
+                                .clamp(0, values.length - 1);
+                            _openTrajectoryMonth(context, projection[idx]);
+                          },
+                          child: CustomPaint(
+                            size: Size(constraints.maxWidth, 120),
+                            painter: _TrajectoryPainter(
+                              values: values,
+                              minValue: minValue,
+                              maxValue: maxValue,
+                              cliffFlags: projection.map((p) => p.cliffedEntryIds.isNotEmpty).toList(),
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
+                  ),
+                ),
+              ],
             ),
           const SizedBox(height: 6),
           Row(
             children: [
+              const SizedBox(width: 40),
               for (var i = 0; i < projection.length; i++)
                 Expanded(
                   child: Text(
@@ -862,9 +906,9 @@ class _SpendHistoryScreenState extends State<SpendHistoryScreen> {
                       children: [
                         _heroCard(),
                         const SizedBox(height: 14),
-                        _historyCard(context),
-                        const SizedBox(height: 14),
                         _trajectoryCard(context),
+                        const SizedBox(height: 14),
+                        _historyCard(context),
                         const SizedBox(height: 14),
                         _priceChangesCard(context),
                         if (widget.ledger.any((e) => e.kind == LedgerEventKind.priceChanged))

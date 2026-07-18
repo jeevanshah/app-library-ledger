@@ -4,7 +4,7 @@ import 'catalog_service.dart';
 
 /// Shared channel — used by [SubscriptionScanner] and [AppIconService].
 const packageScannerChannel = MethodChannel(
-  'com.applibraryledger/package_scanner',
+  'com.priceminder/package_scanner',
 );
 
 class SubscriptionScanner {

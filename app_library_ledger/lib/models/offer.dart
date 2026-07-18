@@ -47,10 +47,10 @@ class SavingsOffer {
     return (promoTotal + ongoing) / 12;
   }
 
-  /// Buckets this offer's raw `tier` into the app's fixed 4-tier-per-
-  /// segment convention ("NBN 25/50/100/500", "<20GB/20–60GB/60GB+/
-  /// Unlimited") for matching/filtering/grouping. Real-world feeds are
-  /// far more granular than that (e.g. "NBN 100/20", "7GB") — `tier`
+  /// Buckets this offer's raw `tier` into the app's NBN/mobile bucket
+  /// convention ("NBN 25/50/100/500/750/1000/2000", "<20GB/20–60GB/
+  /// 60GB+/Unlimited") for matching/filtering/grouping. Real-world feeds
+  /// are far more granular than that (e.g. "NBN 100/20", "7GB") — `tier`
   /// itself is kept raw for precise display; use this getter anywhere
   /// tiers need to compare equal (tier picker, "your tier" matching,
   /// filter chips, per-tier grouping).
@@ -62,8 +62,11 @@ class SavingsOffer {
       if (down == null) return null;
       if (down <= 37) return 'NBN 25';
       if (down <= 75) return 'NBN 50';
-      if (down <= 300) return 'NBN 100';
-      return 'NBN 500';
+      if (down <= 150) return 'NBN 100';
+      if (down <= 600) return 'NBN 500';
+      if (down <= 900) return 'NBN 750';
+      if (down <= 1500) return 'NBN 1000';
+      return 'NBN 2000';
     }
     if (serviceType == 'mobile') {
       if (tier == 'Unlimited') return 'Unlimited';

@@ -1,4 +1,4 @@
-package com.example.app_library_ledger
+package au.com.priceminder.app
 
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -15,7 +15,7 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "com.applibraryledger/package_scanner"
+    private val CHANNEL = "com.priceminder/package_scanner"
     private val iconExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
 

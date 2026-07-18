@@ -16,14 +16,14 @@ void main() async {
   final storageService = StorageService();
   await storageService.init();
   try {
-    await storageService.reconcileBilling();
-  } catch (e) {
-    debugPrint('Billing reconciliation failed: $e');
-  }
-  try {
     await NotificationService().init();
   } catch (e) {
     debugPrint('Notification init failed: $e');
+  }
+  try {
+    await storageService.reconcileBilling();
+  } catch (e) {
+    debugPrint('Billing reconciliation failed: $e');
   }
   await SettingsService().initOffersEnabled();
   runApp(const MyApp());
@@ -89,7 +89,7 @@ class _MyAppState extends State<MyApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: _navKey,
-      title: 'App Ledger',
+      title: 'PriceMinder',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.dark,
       theme: AppTheme.darkTheme,

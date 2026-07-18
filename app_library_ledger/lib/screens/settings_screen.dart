@@ -103,23 +103,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _fireTestNotification() {
-    NotificationService().sendDailySummary(
-      upcomingCount: 1,
-      upcomingCost: 9.99,
-      monthlyTotal: 29.99,
+  Future<void> _sendRealReminderNow() async {
+    final apps = await StorageService().getApps();
+    final name = await NotificationService().sendRealReminderNow(apps);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          name != null
+              ? 'Sent a real reminder for $name'
+              : 'No subscription has enough data (promo end or renewal date) to build one',
+        ),
+      ),
     );
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Test notification fired')));
-  }
-
-  Future<void> _scheduleTestPlus2() async {
-    await NotificationService().scheduleTestPlus2();
-    if (mounted)
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Test scheduled +2 min')));
   }
 
   Future<void> _requestExactAlarm() async {
@@ -369,6 +365,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   // S4: About
                   _sectionLabel('ABOUT'),
                   const SizedBox(height: AppTokens.gapItem),
+                  Center(
+                    child: Image.asset(
+                      'assets/images/logo.png',
+                      width: 56,
+                      height: 56,
+                    ),
+                  ),
+                  const SizedBox(height: AppTokens.gapItem),
                   _row(
                     'Version',
                     trailing: Text(
@@ -395,10 +399,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _sectionLabel('DEVELOPER'),
                     const SizedBox(height: AppTokens.gapItem),
                     _row(
-                      'Fire test notification now',
-                      onTap: _fireTestNotification,
+                      'Send a real reminder now',
+                      onTap: _sendRealReminderNow,
                     ),
-                    _row('Schedule test +2 min', onTap: _scheduleTestPlus2),
                     _row(
                       'Request exact alarm permission',
                       onTap: _requestExactAlarm,

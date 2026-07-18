@@ -411,6 +411,10 @@ class AnalyticsService {
 
   // ── D4: Expired promos ───────────────────────────────────────
 
+  /// Expired promos that couldn't be auto-graduated to regular pricing
+  /// (see `_refresh()` in library_screen.dart) because there's no
+  /// `regularPrice` on file to graduate to — these genuinely need a
+  /// human to supply the missing price.
   List<AppEntry> getExpiredPromos(List<AppEntry> apps) {
     final n = DateTime.now();
     return apps
@@ -419,7 +423,8 @@ class AnalyticsService {
               a.isActiveSubscription &&
               a.isPromotionalPrice &&
               a.promotionEndsDate != null &&
-              a.promotionEndsDate!.isBefore(n),
+              a.promotionEndsDate!.isBefore(n) &&
+              a.regularPrice == null,
         )
         .toList();
   }

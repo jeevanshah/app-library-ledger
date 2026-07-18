@@ -1,7 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 
-/// App Ledger — Shared Design Tokens
+/// PriceMinder — Shared Design Tokens
 /// Based on the handoff spec: 00_shared_tokens.md
 abstract class AppTokens {
   // ── Surfaces ──────────────────────────────────────────────────────

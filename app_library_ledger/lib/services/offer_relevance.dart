@@ -3,6 +3,25 @@ import '../models/app_model.dart';
 import '../models/offer.dart';
 import 'analytics_service.dart';
 
+/// Offers relevant to [app]'s tagged service type/tier: same
+/// `serviceType`, preferring an exact `tierBucket` match but falling
+/// back to the whole same-service pool when [app] has no tier set or
+/// nothing shares it. Shared by every place that compares an app
+/// against the offer catalog, so "is this offer comparable" means the
+/// same thing everywhere (Offers screen, notifications, Dashboard).
+Iterable<SavingsOffer> relevantOffers(
+  AppEntry app,
+  List<SavingsOffer> offers,
+) {
+  if (app.serviceType == null) return const [];
+  final sameService = offers.where((o) => o.serviceType == app.serviceType);
+  final tier = app.serviceTier;
+  final tiered = tier != null
+      ? sameService.where((o) => o.tierBucket == tier)
+      : sameService;
+  return tiered.isNotEmpty ? tiered : sameService;
+}
+
 /// Counts offers matching [app]'s tagged service type/tier that are
 /// cheaper than [comparePrice] (a monthly amount).
 int countCheaperOffers(
@@ -10,14 +29,10 @@ int countCheaperOffers(
   List<SavingsOffer> offers,
   double comparePrice,
 ) {
-  if (app.serviceType == null) return 0;
-  final sameService = offers.where((o) => o.serviceType == app.serviceType);
-  final tier = app.serviceTier;
-  final tiered = tier != null
-      ? sameService.where((o) => o.tierBucket == tier)
-      : sameService;
-  final pool = tiered.isNotEmpty ? tiered : sameService;
-  return pool.where((o) => o.promoPrice < comparePrice).length;
+  return relevantOffers(
+    app,
+    offers,
+  ).where((o) => o.promoPrice < comparePrice).length;
 }
 
 String serviceLabel(String serviceType) =>

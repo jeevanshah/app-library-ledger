@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
@@ -63,6 +62,21 @@ class NotificationService {
     }
   }
 
+  NotificationDetails _details(String channelId, String channelName) =>
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          channelId,
+          channelName,
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      );
+
   /// Schedules with exact alarm; falls back to inexact on PlatformException.
   Future<void> _schedule(
     int id,
@@ -73,19 +87,7 @@ class NotificationService {
     String channelId,
     String channelName,
   ) async {
-    final details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        channelId,
-        channelName,
-        importance: Importance.high,
-        priority: Priority.high,
-      ),
-      iOS: const DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: true,
-      ),
-    );
+    final details = _details(channelId, channelName);
     try {
       await _plugin.zonedSchedule(
         id,
@@ -127,6 +129,17 @@ class NotificationService {
     return result;
   }
 
+  /// The next time the user's configured notification hour/minute
+  /// occurs — today if it hasn't passed yet, otherwise tomorrow. Used
+  /// by the "just caught up" backstops so they land at a predictable
+  /// time instead of firing the instant the app happens to open.
+  DateTime _nextOccurrence(int hour, int minute) {
+    final now = DateTime.now();
+    var next = DateTime(now.year, now.month, now.day, hour, minute);
+    if (!next.isAfter(now)) next = next.add(const Duration(days: 1));
+    return next;
+  }
+
   DateTime _notificationDate(
     DateTime targetDay,
     int daysBefore,
@@ -161,11 +174,12 @@ class NotificationService {
   double _monthlyPrice(AppEntry a, double amount) =>
       a.billingCycle == 'yearly' ? amount / 12 : amount;
 
-  /// One app's renewal reminder about to fire at a specific offset/time.
-  /// Used by [rescheduleAll] to group same-day fires across apps before
-  /// deciding whether each gets its own notification or a combined one.
-  Future<void> _scheduleSingleRenewalFire(_RenewalFire f) async {
-    final app = f.app;
+  /// Builds the title/body a renewal reminder for [app] would show,
+  /// [offset] days before its real `nextRenewalDate`. Shared by the real
+  /// scheduled reminder ([_scheduleSingleRenewalFire]) and
+  /// [sendRealReminderNow], so a manual on-device check always shows
+  /// exactly what a real reminder would say.
+  Future<(String, String)> _renewalContent(AppEntry app, int offset) async {
     final charge = _chargeLabel(app);
     var cheaperCount = 0;
     double? monthlyCost;
@@ -174,19 +188,41 @@ class NotificationService {
       final offers = await OffersService().fetch(enabled: true, force: false);
       cheaperCount = countCheaperOffers(app, offers, monthlyCost);
     }
-    final title = f.offset == 1
+    final title = offset <= 1
         ? '${app.name} renews tomorrow'
         : '${app.name} renews ${_dateFmt.format(app.nextRenewalDate!)}';
-    final body = f.offset == 1
+    final body = offset <= 1
         ? '$charge charge coming tomorrow. Cancel today if you don\'t need it.'
         : cheaperCount > 0
-        ? '$charge will be charged in ${f.offset} days. $cheaperCount ${serviceLabel(app.serviceType!)} plans are currently under \$${monthlyCost!.toStringAsFixed(2)}/mo.'
-        : '$charge will be charged in ${f.offset} days. Still using it?';
+        ? '$charge will be charged in $offset days. $cheaperCount ${serviceLabel(app.serviceType!)} plans are currently under \$${monthlyCost!.toStringAsFixed(2)}/mo.'
+        : '$charge will be charged in $offset days. Still using it?';
+    return (title, body);
+  }
+
+  /// Stable id for the day-of "renewed" notification — the next free
+  /// slot in this app's 16-id block (0-3 renewal offsets, 4-7 promo
+  /// offsets, 8 promo day-of/backstop, 9 this one). Also used by
+  /// [announceRenewalCaughtUp] for its backstop, same replace-in-place
+  /// trick as the promo day-of/backstop pair.
+  int _renewalDoneId(String appId) => (appId.hashCode & 0x3FFFFF) * 16 + 9;
+
+  /// Builds the title/body for a "you were charged" renewal
+  /// confirmation. Unlike promo, a normal renewal's price doesn't
+  /// change, so this is one fixed message shared by both the day-of
+  /// schedule ([rescheduleAll]) and the backstop ([announceRenewalCaughtUp]).
+  Future<(String, String)> _renewalDoneContent(AppEntry app) async =>
+      ('${app.name} renewed', '${_chargeLabel(app)} charged.');
+
+  /// One app's renewal reminder about to fire at a specific offset/time.
+  /// Used by [rescheduleAll] to group same-day fires across apps before
+  /// deciding whether each gets its own notification or a combined one.
+  Future<void> _scheduleSingleRenewalFire(_RenewalFire f) async {
+    final (title, body) = await _renewalContent(f.app, f.offset);
     await _schedule(
       f.id,
       title,
       body,
-      app.id,
+      f.app.id,
       tz.TZDateTime.from(f.notifyAt, tz.local),
       'renewal_channel',
       'Renewal Reminders',
@@ -235,6 +271,41 @@ class NotificationService {
     }
   }
 
+  /// Builds the title/body a promo-expiry reminder for [app] would show,
+  /// [offset] days before its real `promotionEndsDate` ([endDate]).
+  /// Shared by the real scheduled reminder ([schedulePromoReminder]) and
+  /// [sendRealReminderNow].
+  Future<(String, String)> _promoContent(
+    AppEntry app,
+    int offset,
+    DateTime endDate,
+  ) async {
+    var cheaperCount = 0;
+    double? monthlyRegular;
+    if (app.serviceType != null && SettingsService().offersEnabled.value) {
+      monthlyRegular = _monthlyPrice(app, app.regularPrice!);
+      final offers = await OffersService().fetch(enabled: true, force: false);
+      cheaperCount = countCheaperOffers(app, offers, monthlyRegular);
+    }
+    final title = offset <= 1
+        ? 'Last day of your ${app.name} promo'
+        : '${app.name} promo ends ${_dateFmt.format(endDate)}';
+    final body = offset <= 1
+        ? 'Tomorrow the price rises ${_oldNew(app)}.'
+        : cheaperCount > 0
+        ? 'Price jumps ${_oldNew(app)} in $offset days. $cheaperCount ${serviceLabel(app.serviceType!)} plans are currently under \$${monthlyRegular!.toStringAsFixed(2)}/mo.'
+        : 'Price jumps ${_oldNew(app)} in $offset days. Decide before you\'re charged the full price.';
+    return (title, body);
+  }
+
+  /// Stable id for the day-of "promo ended" notification — the slot
+  /// right after the 4 offset-based promo reminders (base+4..base+7),
+  /// still inside this app's 16-id block. Also used by
+  /// [announcePromoGraduated] for the reactive backstop, so if the
+  /// scheduled one already fired and is sitting in the shade, the
+  /// backstop updates it in place instead of stacking a duplicate.
+  int _promoEndedId(String appId) => (appId.hashCode & 0x3FFFFF) * 16 + 8;
+
   Future<void> schedulePromoReminder(AppEntry app) async {
     if (!app.isPromotionalPrice ||
         app.promotionEndsDate == null ||
@@ -247,14 +318,6 @@ class NotificationService {
     final now = DateTime.now();
     final ids = await _idsForApp(app.id, promo: true);
 
-    var cheaperCount = 0;
-    double? monthlyRegular;
-    if (app.serviceType != null && SettingsService().offersEnabled.value) {
-      monthlyRegular = _monthlyPrice(app, app.regularPrice!);
-      final offers = await OffersService().fetch(enabled: true, force: false);
-      cheaperCount = countCheaperOffers(app, offers, monthlyRegular);
-    }
-
     for (final (id, offset) in ids) {
       final notifyAt = _notificationDate(
         endDate,
@@ -263,14 +326,7 @@ class NotificationService {
         settings.minute,
       );
       if (!notifyAt.isAfter(now)) continue;
-      final title = offset == 1
-          ? 'Last day of your ${app.name} promo'
-          : '${app.name} promo ends ${_dateFmt.format(endDate)}';
-      final body = offset == 1
-          ? 'Tomorrow the price rises ${_oldNew(app)}.'
-          : cheaperCount > 0
-          ? 'Price jumps ${_oldNew(app)} in $offset days. $cheaperCount ${serviceLabel(app.serviceType!)} plans are currently under \$${monthlyRegular!.toStringAsFixed(2)}/mo.'
-          : 'Price jumps ${_oldNew(app)} in $offset days. Decide before you\'re charged the full price.';
+      final (title, body) = await _promoContent(app, offset, endDate);
       await _schedule(
         id,
         title,
@@ -281,18 +337,93 @@ class NotificationService {
         'Promo Expiry Alerts',
       );
     }
+
+    // Day-of notification: the offsets above are all advance warnings
+    // (7 days before, 1 day before, ...) -- nothing previously fired
+    // on the actual day the price changes.
+    final dayOfAt = DateTime(
+      endDate.year,
+      endDate.month,
+      endDate.day,
+      settings.hour,
+      settings.minute,
+    );
+    if (dayOfAt.isAfter(now)) {
+      await _schedule(
+        _promoEndedId(app.id),
+        '${app.name} promo ends today',
+        'Price moves ${_oldNew(app)} today.',
+        app.id,
+        tz.TZDateTime.from(dayOfAt, tz.local),
+        'promo_channel',
+        'Promo Expiry Alerts',
+      );
+    }
+  }
+
+  /// Backstop for the Library screen's auto-graduation: if the
+  /// scheduled day-of notification above didn't fire (app closed,
+  /// exact alarm permission denied, reinstalled, a backdated entry,
+  /// etc.), this covers it the next time the app opens and catches an
+  /// already-expired promo. Scheduled for the next occurrence of the
+  /// user's configured notification time rather than shown instantly,
+  /// so it lands predictably instead of at a random app-open moment —
+  /// and shares an id with the day-of schedule above, so whichever
+  /// fires last simply replaces the pending one.
+  Future<void> announcePromoGraduated(AppEntry app) async {
+    final settings = await SettingsService().load();
+    if (!settings.enabled || !settings.promoAlerts) return;
+    final cycleLabel = app.billingCycle == 'yearly' ? '/yr' : '/mo';
+    final body = app.subscriptionCost != null
+        ? 'Now \$${app.subscriptionCost!.toStringAsFixed(2)}$cycleLabel.'
+        : 'Price has moved to the regular rate.';
+    await _schedule(
+      _promoEndedId(app.id),
+      '${app.name} promo ended',
+      body,
+      app.id,
+      tz.TZDateTime.from(
+        _nextOccurrence(settings.hour, settings.minute),
+        tz.local,
+      ),
+      'promo_channel',
+      'Promo Expiry Alerts',
+    );
+  }
+
+  /// Backstop for `StorageService.reconcileBilling()`: fires when it
+  /// catches an already-overdue `nextRenewalDate` on app launch (app
+  /// closed past the renewal day, missed alarm, etc.) and rolls it
+  /// forward. Same next-occurrence scheduling and id-sharing trick as
+  /// [announcePromoGraduated].
+  Future<void> announceRenewalCaughtUp(AppEntry app) async {
+    final settings = await SettingsService().load();
+    if (!settings.enabled) return;
+    final (title, body) = await _renewalDoneContent(app);
+    await _schedule(
+      _renewalDoneId(app.id),
+      title,
+      body,
+      app.id,
+      tz.TZDateTime.from(
+        _nextOccurrence(settings.hour, settings.minute),
+        tz.local,
+      ),
+      'renewal_channel',
+      'Renewal Reminders',
+    );
   }
 
   Future<void> cancelReminders(String appId) async {
     final base = (appId.hashCode & 0x3FFFFF) * 16;
-    for (var i = 0; i < 8; i++) {
+    for (var i = 0; i < 10; i++) {
       await _plugin.cancel(base + i);
     }
   }
 
   Future<void> cancelPromoReminders(String appId) async {
     final base = (appId.hashCode & 0x3FFFFF) * 16;
-    for (var i = 4; i < 8; i++) {
+    for (var i = 4; i < 9; i++) {
       await _plugin.cancel(base + i);
     }
   }
@@ -325,6 +456,30 @@ class NotificationService {
               .putIfAbsent(day, () => [])
               .add(_RenewalFire(a, id, offset, notifyAt));
         }
+
+        // Day-of notification: the offsets above are all advance
+        // warnings -- nothing previously fired on the actual renewal
+        // day. Kept separate from the same-day combine-into-one
+        // grouping above, same as promo's day-of.
+        final dayOfAt = DateTime(
+          a.nextRenewalDate!.year,
+          a.nextRenewalDate!.month,
+          a.nextRenewalDate!.day,
+          settings.hour,
+          settings.minute,
+        );
+        if (dayOfAt.isAfter(now)) {
+          final (title, body) = await _renewalDoneContent(a);
+          await _schedule(
+            _renewalDoneId(a.id),
+            title,
+            body,
+            a.id,
+            tz.TZDateTime.from(dayOfAt, tz.local),
+            'renewal_channel',
+            'Renewal Reminders',
+          );
+        }
       }
       for (final fires in byDay.values) {
         if (fires.length == 1) {
@@ -340,42 +495,63 @@ class NotificationService {
     }
   }
 
-  Future<void> scheduleTestPlus2() async {
-    final now = DateTime.now().add(const Duration(minutes: 2));
-    await _schedule(
-      9999,
-      'Test',
-      '+2 min test',
-      '',
-      tz.TZDateTime.from(now, tz.local),
-      'test',
-      'Test',
-    );
-  }
+  /// Picks a real subscription with enough data to build a genuine
+  /// reminder — an active promo ending soonest, or failing that the
+  /// soonest renewal — and shows that exact notification right now
+  /// (same content-building code as the real scheduled reminders, just
+  /// displayed immediately instead of scheduled for its real offset
+  /// date). Returns the app name used, or null if nothing in the
+  /// library has enough data to build one.
+  Future<String?> sendRealReminderNow(List<AppEntry> apps) async {
+    final active = apps.where((a) => a.isActiveSubscription).toList();
+    final now = DateTime.now();
 
-  Future<void> sendDailySummary({
-    required int upcomingCount,
-    required double upcomingCost,
-    required double monthlyTotal,
-  }) async {
-    await _plugin.show(
-      0,
-      'Your Subscription Summary',
-      '$upcomingCount renewal(s) this week · \$${upcomingCost.toStringAsFixed(2)}\nMonthly total: \$${monthlyTotal.toStringAsFixed(2)}',
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'daily_summary',
-          'Daily Summary',
-          importance: Importance.defaultImportance,
-          priority: Priority.defaultPriority,
-        ),
-        iOS: DarwinNotificationDetails(
-          presentAlert: true,
-          presentBadge: true,
-          presentSound: false,
-        ),
-      ),
-    );
+    final promoCandidates =
+        active.where((a) =>
+            a.isPromotionalPrice &&
+            a.promotionEndsDate != null &&
+            a.promotionEndsDate!.isAfter(now) &&
+            a.subscriptionCost != null &&
+            a.regularPrice != null).toList()
+          ..sort(
+            (a, b) => a.promotionEndsDate!.compareTo(b.promotionEndsDate!),
+          );
+
+    if (promoCandidates.isNotEmpty) {
+      final app = promoCandidates.first;
+      final endDate = app.promotionEndsDate!;
+      final offset = endDate.difference(now).inDays.clamp(1, 999);
+      final (title, body) = await _promoContent(app, offset, endDate);
+      await _plugin.show(
+        888888888,
+        title,
+        body,
+        _details('promo_channel', 'Promo Expiry Alerts'),
+      );
+      return app.name;
+    }
+
+    final renewalCandidates =
+        active.where((a) =>
+            a.nextRenewalDate != null &&
+            a.nextRenewalDate!.isAfter(now) &&
+            a.subscriptionCost != null).toList()
+          ..sort((a, b) => a.nextRenewalDate!.compareTo(b.nextRenewalDate!));
+
+    if (renewalCandidates.isNotEmpty) {
+      final app = renewalCandidates.first;
+      final offset = app.nextRenewalDate!.difference(now).inDays.clamp(1, 999);
+      final (title, body) = await _renewalContent(app, offset);
+      await _plugin.show(
+        888888888,
+        title,
+        body,
+        _details('renewal_channel', 'Renewal Reminders'),
+      );
+      return app.name;
+    }
+
+    return null;
   }
 
   Future<List<Map<String, dynamic>>> listPending() async {

@@ -28,8 +28,8 @@ class BackupService {
 
     await Share.shareXFiles(
       [XFile(file.path)],
-      subject: 'App Library Ledger Backup',
-      text: 'My subscription backup from App Library Ledger',
+      subject: 'PriceMinder Backup',
+      text: 'My subscription backup from PriceMinder',
     );
   }
 
@@ -71,7 +71,7 @@ class BackupService {
 
     await Share.shareXFiles([
       XFile(file.path),
-    ], subject: 'App Library Ledger - CSV Export');
+    ], subject: 'PriceMinder - CSV Export');
   }
 
   String _dateStamp() {

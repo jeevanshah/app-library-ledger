@@ -190,11 +190,25 @@ class _OffersScreenState extends State<OffersScreen> {
 
   String get _sortLabel => switch (_sortMode) { 1 => 'Promo price', 2 => 'Ongoing price', _ => 'First-year avg' };
 
+  /// Returned as a [Set] for the filter-row/carousel call sites, but built
+  /// from an already-sorted list — [LinkedHashSet] (Dart's default `Set`)
+  /// preserves insertion order, so `.toList()`/`.first` on the result stay
+  /// in speed/data order instead of arbitrary catalog order.
   Set<String> get _availableTiers {
     var src = _allOffers;
     if (_segment == 'nbn') src = src.where((o) => o.serviceType == 'nbn').toList();
     else if (_segment == 'mobile') src = src.where((o) => o.serviceType == 'mobile').toList();
-    return src.where((o) => o.tierBucket != null).map((o) => o.tierBucket!).toSet();
+    final buckets = src.where((o) => o.tierBucket != null).map((o) => o.tierBucket!).toSet();
+    if (_segment == 'nbn') {
+      return (buckets.toList()
+            ..sort((a, b) => _nbnBucketSpeed(a).compareTo(_nbnBucketSpeed(b))))
+          .toSet();
+    }
+    if (_segment == 'mobile') {
+      const order = ['<20GB', '20–60GB', '60GB+', 'Unlimited'];
+      return order.where(buckets.contains).toSet();
+    }
+    return buckets;
   }
 
   bool get _showTierPicker {
@@ -202,12 +216,21 @@ class _OffersScreenState extends State<OffersScreen> {
     if (_anchorNotSure) return false;
     if (_anchorEntry!.serviceTier != null) return false;
     if (_segment != 'nbn' && _segment != 'mobile') return false;
-    return true;
+    return _tierPickerOptions.isNotEmpty;
   }
 
+  /// Numeric speed embedded in an "NBN N" bucket label, for sorting —
+  /// a plain string sort would put "NBN 1000" before "NBN 25".
+  int _nbnBucketSpeed(String bucket) =>
+      int.tryParse(RegExp(r'\d+').firstMatch(bucket)?.group(0) ?? '') ?? 0;
+
+  /// Tier pill options for the picker card, derived from whichever
+  /// tiers actually appear in the current catalog ([_availableTiers])
+  /// rather than a fixed list — so a new NBN speed tier (or a mobile
+  /// data bucket) shows up here automatically as the offers feed adds
+  /// them, instead of needing a code change every time.
   List<String> get _tierPickerOptions {
-    if (_segment == 'nbn') return const ['NBN 25', 'NBN 50', 'NBN 100', 'NBN 500'];
-    if (_segment == 'mobile') return const ['<20GB', '20–60GB', '60GB+', 'Unlimited'];
+    if (_segment == 'nbn' || _segment == 'mobile') return _availableTiers.toList();
     return const [];
   }
 
@@ -282,10 +305,9 @@ class _OffersScreenState extends State<OffersScreen> {
         SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(AppTokens.padHeader, 12, AppTokens.padHeader, 0), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
             Expanded(child: Text('Offers', style: GoogleFonts.playfairDisplay(color: AppTokens.textStrong, fontSize: 28, fontWeight: FontWeight.w700))),
+            GestureDetector(onTap: _showPrivacyExplain, child: const Padding(padding: EdgeInsets.only(right: 6), child: Icon(Icons.info_outline_rounded, size: 14, color: AppTokens.textMuted))),
             Text('$totalOffers plans', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
           ]),
-          const SizedBox(height: 4),
-          Text("Fetched anonymously — what you track never leaves your device.", style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
           const SizedBox(height: 16),
           _buildSegmentControl(),
           const SizedBox(height: 12),
@@ -344,11 +366,11 @@ class _OffersScreenState extends State<OffersScreen> {
           return Center(child: Padding(padding: const EdgeInsets.only(top: 40), child: Text('No offers at $tier', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 13))));
         }
         if (i == offers.length) {
-          return Padding(padding: const EdgeInsets.only(top: 16), child: Column(children: [
-            Text('NBN availability varies by address — check with the provider.', textAlign: TextAlign.center, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPlaceholder, fontSize: 11)),
-            const SizedBox(height: 4),
-            Text('Prices verified at time of listing. Always confirm with the provider.', textAlign: TextAlign.center, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPlaceholder, fontSize: 11)),
-          ]));
+          return Padding(padding: const EdgeInsets.only(top: 16), child: Text(
+            _segment == 'nbn'
+                ? 'Prices verified at time of listing — availability varies by address.'
+                : 'Prices verified at time of listing. Always confirm with the provider.',
+            textAlign: TextAlign.center, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPlaceholder, fontSize: 11)));
         }
         return Padding(padding: const EdgeInsets.only(bottom: AppTokens.gapItem), child: _OfferCard(
           offer: offers[i], now: DateTime.now(),
@@ -528,11 +550,7 @@ class _OffersScreenState extends State<OffersScreen> {
   Widget _buildTierPickerCard() {
     return Container(padding: const EdgeInsets.symmetric(horizontal: AppTokens.padCard, vertical: 12), decoration: BoxDecoration(color: AppTokens.fieldBg, borderRadius: BorderRadius.circular(AppTokens.rInput), border: Border.all(color: AppTokens.hairlineStrong)),
       child: Row(children: [
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-          Text(_tierPickerQuestion, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 2),
-          Text('Optional — helps match you to the right tier', style: GoogleFonts.plusJakartaSans(color: AppTokens.textFaint, fontSize: 11)),
-        ])),
+        Expanded(child: Text('$_tierPickerQuestion (optional)', style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600))),
         const SizedBox(width: 12),
         GestureDetector(
           onTap: _showTierPickerSheet,
@@ -613,8 +631,8 @@ class _OffersScreenState extends State<OffersScreen> {
 
   Widget _buildSortRow() {
     return Row(children: [
-      Expanded(child: GestureDetector(onTap: _showAvgExplain, child: Text('Prices shown as first-year averages \u24D8', maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)))),
-      const SizedBox(width: 8),
+      GestureDetector(onTap: _showAvgExplain, child: const Icon(Icons.info_outline_rounded, size: 14, color: AppTokens.textMuted)),
+      const Spacer(),
       GestureDetector(onTap: _cycleSort, child: Row(mainAxisSize: MainAxisSize.min, children: [
         Text('Sort: ${_sortLabel.toLowerCase()}', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 11)),
         const SizedBox(width: 6),
@@ -626,6 +644,16 @@ class _OffersScreenState extends State<OffersScreen> {
         const SizedBox(width: 4), const Icon(Icons.swap_vert_rounded, size: 14, color: AppTokens.textMuted),
       ])),
     ]);
+  }
+
+  void _showPrivacyExplain() {
+    showModalBottomSheet(context: context, backgroundColor: AppTokens.cardBg, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(child: Padding(padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Your privacy', style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 12),
+        Text('Fetched anonymously — what you track never leaves your device.', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 13, height: 1.5)),
+      ]))),
+    );
   }
 
   void _showAvgExplain() {
@@ -774,7 +802,7 @@ class _OfferCard extends StatelessWidget {
       decoration: BoxDecoration(color: AppTokens.cardBg, borderRadius: BorderRadius.circular(AppTokens.rInput), border: Border.all(color: AppTokens.hairline, width: 1)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Expanded(child: Text('${offer.provider} \u00B7 ${offer.title}', maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600))),
+          Expanded(child: Text(offer.provider, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w700))),
           if (offer.tier != null || isNew) const SizedBox(width: 8),
           Flexible(child: Row(mainAxisSize: MainAxisSize.min, children: [
             if (offer.tier != null) Flexible(child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: tierMatch ? AppTokens.gold.withValues(alpha: 0.12) : AppTokens.brandStart.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(AppTokens.rSmallPill)), child: Text(offer.tier! + (tierMatch ? ' \u00B7 your tier' : ''), maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.plusJakartaSans(color: tierMatch ? AppTokens.goldLight : AppTokens.brandStart, fontSize: 11, fontWeight: FontWeight.w500)))),

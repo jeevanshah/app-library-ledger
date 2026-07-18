@@ -1,4 +1,4 @@
-name: app_library_ledger
+name: priceminder
 description: "Track all your app subscriptions in one place. Simple, private, offline."
 publish_to: 'none'
 version: 1.0.0+1
@@ -28,6 +28,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.3
 
 flutter:
   uses-material-design: true
@@ -37,3 +38,9 @@ flutter:
     - assets/catalog.json
     - assets/service_icons/
     - assets/offers_sample.json
+
+flutter_launcher_icons:
+  android: true
+  image_path: "assets/images/logo.png"
+  adaptive_icon_background: "#0B0B11"
+  adaptive_icon_foreground: "assets/images/logo.png"

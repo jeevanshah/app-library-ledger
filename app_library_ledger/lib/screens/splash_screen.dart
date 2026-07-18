@@ -112,28 +112,12 @@ class _SplashScreenState extends State<SplashScreen>
                   // Logo mark
                   ScaleTransition(
                     scale: Tween(begin: 0.92, end: 1.0).animate(_logoScale),
-                    child: Opacity(
-                      opacity: _logoCtrl.value,
-                      child: Container(
-                        width: 96,
-                        height: 96,
-                        decoration: BoxDecoration(
-                          color: AppTokens.cardBg,
-                          borderRadius: BorderRadius.circular(28),
-                          border: Border.all(
-                            color: AppTokens.hairlineStrong,
-                            width: 1,
-                          ),
-                        ),
-                        child: ShaderMask(
-                          shaderCallback: (bounds) =>
-                              AppTokens.goldGradient.createShader(bounds),
-                          child: const Icon(
-                            Icons.subscriptions_rounded,
-                            size: 46,
-                            color: Colors.white,
-                          ),
-                        ),
+                    child: FadeTransition(
+                      opacity: _logoCtrl,
+                      child: Image.asset(
+                        'assets/images/logo.png',
+                        width: 140,
+                        height: 140,
                       ),
                     ),
                   ),
@@ -156,7 +140,7 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'App Ledger',
+                          'PriceMinder',
                           style: GoogleFonts.playfairDisplay(
                             color: AppTokens.textStrong,
                             fontSize: 32,
