@@ -114,10 +114,13 @@ class _SplashScreenState extends State<SplashScreen>
                     scale: Tween(begin: 0.92, end: 1.0).animate(_logoScale),
                     child: FadeTransition(
                       opacity: _logoCtrl,
-                      child: Image.asset(
-                        'assets/images/logo.png',
-                        width: 140,
-                        height: 140,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(31),
+                        child: Image.asset(
+                          'assets/images/logo.png',
+                          width: 140,
+                          height: 140,
+                        ),
                       ),
                     ),
                   ),

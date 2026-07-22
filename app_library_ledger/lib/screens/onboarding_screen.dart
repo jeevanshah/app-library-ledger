@@ -159,10 +159,13 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                                     ),
                                   ),
                                 ),
-                                Image.asset(
-                                  'assets/images/logo.png',
-                                  width: 140,
-                                  height: 140,
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(31),
+                                  child: Image.asset(
+                                    'assets/images/logo.png',
+                                    width: 140,
+                                    height: 140,
+                                  ),
                                 ),
                               ],
                             ),

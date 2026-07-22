@@ -366,10 +366,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _sectionLabel('ABOUT'),
                   const SizedBox(height: AppTokens.gapItem),
                   Center(
-                    child: Image.asset(
-                      'assets/images/logo.png',
-                      width: 56,
-                      height: 56,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.asset(
+                        'assets/images/logo.png',
+                        width: 56,
+                        height: 56,
+                      ),
                     ),
                   ),
                   const SizedBox(height: AppTokens.gapItem),
