@@ -72,7 +72,10 @@
       "Bash(find \"/c/Users/Deep/AppData/Local/Android/Sdk/build-tools\" -iname \"apksigner.bat\" 2>/dev/null)",
       "Read(//c/Users/Deep/AppData/Local/Android/Sdk/build-tools/**)",
       "Bash(\"/c/Users/Deep/AppData/Local/Android/Sdk/build-tools/36.1.0/apksigner.bat\" verify *)",
-      "Bash(curl -s https://jrsdigital.net/priceminder/privacy.html --max-time 10)"
+      "Bash(curl -s https://jrsdigital.net/priceminder/privacy.html --max-time 10)",
+      "Bash(python3 -c \"\")",
+      "Bash(awk '/^\\\\*\\\\*Ever switch/,0' \"C:/Users/Deep/AppData/Local/Temp/claude/c--Users-Deep-Desktop-mobile-app/18285017-362c-465e-95c8-c793fbcd156c/scratchpad/store_listing.md\")",
+      "Bash(\"/c/Program Files/ShareX/ffmpeg.exe\" -i \"android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png\")"
     ]
   }
 }
