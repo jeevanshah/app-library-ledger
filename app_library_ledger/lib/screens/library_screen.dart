@@ -721,57 +721,42 @@ class _LibraryScreenState extends State<LibraryScreen>
                                                           const SizedBox(height: 2),
                                                           Row(
                                                             mainAxisSize:
-                                                                MainAxisSize.min,
+                                                                MainAxisSize.max,
                                                             crossAxisAlignment:
                                                                 CrossAxisAlignment
                                                                     .center,
                                                             children: [
-                                                              ShaderMask(
-                                                                shaderCallback:
-                                                                    (bounds) =>
-                                                                        LinearGradient(
-                                                                  colors: [
-                                                                    AppTokens
-                                                                        .brandStart,
-                                                                    AppTokens
-                                                                        .brandEnd,
-                                                                  ],
-                                                                ).createShader(
-                                                                  bounds,
-                                                                ),
-                                                                child: AnimatedBuilder(
-                                                                  animation:
-                                                                      _counterAnim,
-                                                                  builder: (_, __) =>
-                                                                      Text(
-                                                                    _fmt.format(
-                                                                      monthly *
-                                                                          _counterAnim
-                                                                              .value,
-                                                                    ),
-                                                                    style: GoogleFonts
-                                                                        .spaceGrotesk(
-                                                                      color: AppTokens
-                                                                          .brandStart,
-                                                                      fontSize: 24,
-                                                                      fontWeight:
-                                                                          FontWeight
-                                                                              .w700,
-                                                                      letterSpacing:
-                                                                          -0.5,
-                                                                      fontFeatures: const [
-                                                                        FontFeature
-                                                                            .tabularFigures(),
-                                                                      ],
+                                                              Flexible(
+                                                                child: ShaderMask(
+                                                                  shaderCallback: (bounds) =>
+                                                                      LinearGradient(
+                                                                    colors: [
+                                                                      AppTokens.brandStart,
+                                                                      AppTokens.brandEnd,
+                                                                    ],
+                                                                  ).createShader(bounds),
+                                                                  child: AnimatedBuilder(
+                                                                    animation: _counterAnim,
+                                                                    builder: (_, __) => Text(
+                                                                      _fmt.format(monthly * _counterAnim.value),
+                                                                      maxLines: 1,
+                                                                      overflow: TextOverflow.ellipsis,
+                                                                      style: GoogleFonts.spaceGrotesk(
+                                                                        color: AppTokens.brandStart,
+                                                                        fontSize: 22,
+                                                                        fontWeight: FontWeight.w700,
+                                                                        letterSpacing: -0.5,
+                                                                        fontFeatures: const [FontFeature.tabularFigures()],
+                                                                      ),
                                                                     ),
                                                                   ),
                                                                 ),
                                                               ),
-                                                              const SizedBox(width: 6),
+                                                              const SizedBox(width: 4),
                                                               heroIllustration(
                                                                 'piggybank_savings',
-                                                                width: 32,
-                                                                height: 32,
+                                                                width: 26,
+                                                                height: 26,
                                                               ),
                                                             ],
                                                           ),

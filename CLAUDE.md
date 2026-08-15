@@ -341,6 +341,15 @@ Nobody else has both sides privately.
   (3) Interactive Price Trajectory card with cubic bezier smooth curve graph, gradient area fill, glowing nodes, and amber cliff rise markers;
   (4) Price Changes Log with 3D icons, old-to-new price pills, and monthly delta badges;
   (5) Upcoming Charges card with date badges and tabular pricing. Hot-reloaded and verified clean on physical Galaxy S23 Ultra.
+- Offers & Savings Overhaul (2026-08-15): redesigned [`offers_screen.dart`](file:///c:/Users/Deep/Desktop/mobile-app/app_library_ledger/lib/screens/offers_screen.dart):
+  (1) Unified Full-Height Vertical Scrolling: removed nested `PageView` / `ListView.builder` viewport trap in favor of a unified `CustomScrollView` with `SliverPersistentHeader` sticky filter & sort bar; as user scrolls down, hero card smoothly scrolls away giving 100% of the screen height to browse plans;
+  (2) Eliminated all RenderFlex overflows across `_OfferCard` (responsive price & delta pill wrapping, flexible provider titles, compact action button) and wrapped all bottom sheets in `SingleChildScrollView(physics: BouncingScrollPhysics())` with `isScrollControlled: true`;
+  (3) Hero Header with verified plan count badge and on-device anonymous sync indicator;
+  (4) Hero Savings Match Card featuring `piggybank_savings` 3D illustration, live monthly and annual savings calculation against user's active broadband/mobile plan, and 1-tap anchor config;
+  (5) Fixed Mobile Plan Tagging & Tier Migration: segment-specific anchor isolation, invalid tier resetting (e.g. converting NBN tier to Mobile data bucket `<20GB`, `20–60GB`, `60GB+`, `Unlimited`), support for all subscriptions in tagging picker, and 1-tap "Untag Plan" action;
+  (6) Modern capsule Segment Control (NBN Broadband vs Mobile SIM);
+  (7) Redesigned `_OfferCard` with provider branding, 1st-year average price, emerald savings delta pills, promo breakdown, mini 12-month trajectory timeline, and gradient CTA button;
+  (8) Comprehensive detail bottom sheet with full 12-month trajectory comparison table and direct provider link launcher. Hot-restarted and verified clean on Galaxy S23 Ultra.
 
 ## Roadmap / parking lot (agreed order)
 

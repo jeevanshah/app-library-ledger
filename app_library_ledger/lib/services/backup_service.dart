@@ -1,81 +1,153 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import '../models/app_model.dart';
-import '../models/category_model.dart';
+import 'storage_service.dart';
+
+class LocalBackupInfo {
+  final File file;
+  final String fileName;
+  final DateTime createdAt;
+  final int byteSize;
+  final int appCount;
+  final int ledgerCount;
+
+  LocalBackupInfo({
+    required this.file,
+    required this.fileName,
+    required this.createdAt,
+    required this.byteSize,
+    required this.appCount,
+    required this.ledgerCount,
+  });
+
+  String get formattedSize {
+    if (byteSize < 1024) return '$byteSize B';
+    if (byteSize < 1024 * 1024) return '${(byteSize / 1024).toStringAsFixed(1)} KB';
+    return '${(byteSize / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  String get formattedDate {
+    return DateFormat('MMM d, yyyy · h:mm a').format(createdAt);
+  }
+}
 
 class BackupService {
   static final BackupService _instance = BackupService._internal();
   factory BackupService() => _instance;
   BackupService._internal();
 
-  Future<void> exportData({
-    required List<AppEntry> apps,
-    required List<Category> categories,
-  }) async {
-    final data = {
-      'version': '1.0',
-      'exportDate': DateTime.now().toIso8601String(),
-      'apps': apps.map((a) => a.toJson()).toList(),
-      'categories': categories.map((c) => c.toJson()).toList(),
-    };
+  Future<Directory> _getBackupDir() async {
+    final docs = await getApplicationDocumentsDirectory();
+    final backupDir = Directory('${docs.path}/backups');
+    if (!await backupDir.exists()) {
+      await backupDir.create(recursive: true);
+    }
+    return backupDir;
+  }
 
-    final json = const JsonEncoder.withIndent('  ').convert(data);
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/subscriptions_backup_${_dateStamp()}.json');
-    await file.writeAsString(json);
+  /// Creates a timestamped local backup file on device and returns info.
+  Future<LocalBackupInfo> createLocalBackup() async {
+    final jsonStr = await StorageService().exportAllJson();
+    final backupDir = await _getBackupDir();
+    final now = DateTime.now();
+    final stamp = DateFormat('yyyyMMdd_HHmmss').format(now);
+    final fileName = 'priceminder_backup_$stamp.json';
+    final file = File('${backupDir.path}/$fileName');
+    await file.writeAsString(jsonStr, flush: true);
 
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      subject: 'PriceMinder Backup',
-      text: 'My subscription backup from PriceMinder',
+    int appCount = 0;
+    int ledgerCount = 0;
+    try {
+      final decoded = jsonDecode(jsonStr) as Map<String, dynamic>;
+      if (decoded['apps'] is List) appCount = (decoded['apps'] as List).length;
+      if (decoded['ledger'] is List) ledgerCount = (decoded['ledger'] as List).length;
+    } catch (_) {}
+
+    final stat = await file.stat();
+    return LocalBackupInfo(
+      file: file,
+      fileName: fileName,
+      createdAt: now,
+      byteSize: stat.size,
+      appCount: appCount,
+      ledgerCount: ledgerCount,
     );
   }
 
-  Future<Map<String, dynamic>?> importData(String filePath) async {
-    final file = File(filePath);
-    if (!await file.exists()) return null;
-    final json = await file.readAsString();
-    return jsonDecode(json) as Map<String, dynamic>;
-  }
+  /// Lists all local backup files sorted newest first.
+  Future<List<LocalBackupInfo>> listLocalBackups() async {
+    final backupDir = await _getBackupDir();
+    final files = backupDir
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.json'))
+        .toList();
 
-  Future<void> exportCSV(List<AppEntry> apps) async {
-    final buffer = StringBuffer();
-    buffer.writeln(
-      'Name,Category,Cost,Billing Cycle,Next Renewal,App Store Link,Notes,Is Promo,Regular Price,Promo Ends',
-    );
+    final result = <LocalBackupInfo>[];
+    for (final file in files) {
+      try {
+        final stat = await file.stat();
+        final raw = await file.readAsString();
+        final decoded = jsonDecode(raw) as Map<String, dynamic>;
+        int appCount = 0;
+        int ledgerCount = 0;
+        if (decoded['apps'] is List) appCount = (decoded['apps'] as List).length;
+        if (decoded['ledger'] is List) ledgerCount = (decoded['ledger'] as List).length;
 
-    for (final app in apps) {
-      buffer.write('"${app.name}",');
-      buffer.write('"${app.category}",');
-      buffer.write('${app.subscriptionCost ?? '0'},');
-      buffer.write('${app.billingCycle ?? 'N/A'},');
-      buffer.write(
-        '${app.nextRenewalDate != null ? '${app.nextRenewalDate!.month}/${app.nextRenewalDate!.day}/${app.nextRenewalDate!.year}' : 'N/A'},',
-      );
-      buffer.write('"${app.appStoreLink}",');
-      buffer.write('"${(app.notes ?? '').replaceAll('"', '""')}",');
-      buffer.write('${app.isPromotionalPrice ? 'Yes' : 'No'},');
-      buffer.write('${app.regularPrice ?? '0'},');
-      buffer.writeln(
-        app.promotionEndsDate != null
-            ? '${app.promotionEndsDate!.month}/${app.promotionEndsDate!.day}/${app.promotionEndsDate!.year}'
-            : 'N/A',
-      );
+        DateTime createdAt = stat.modified;
+        if (decoded['exportedAt'] is String) {
+          final parsed = DateTime.tryParse(decoded['exportedAt']);
+          if (parsed != null) createdAt = parsed;
+        }
+
+        final name = file.path.split(Platform.pathSeparator).last;
+        result.add(
+          LocalBackupInfo(
+            file: file,
+            fileName: name,
+            createdAt: createdAt,
+            byteSize: stat.size,
+            appCount: appCount,
+            ledgerCount: ledgerCount,
+          ),
+        );
+      } catch (e) {
+        debugPrint('Error reading backup file ${file.path}: $e');
+      }
     }
 
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/subscriptions_${_dateStamp()}.csv');
-    await file.writeAsString(buffer.toString());
-
-    await Share.shareXFiles([
-      XFile(file.path),
-    ], subject: 'PriceMinder - CSV Export');
+    result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return result;
   }
 
-  String _dateStamp() {
-    final now = DateTime.now();
-    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  /// Restores from a specific local backup file.
+  Future<bool> restoreBackup(File file) async {
+    try {
+      final raw = await file.readAsString();
+      return await StorageService().importAllJson(raw);
+    } catch (e) {
+      debugPrint('Error restoring backup file ${file.path}: $e');
+      return false;
+    }
+  }
+
+  /// Deletes a local backup file.
+  Future<void> deleteBackup(File file) async {
+    if (await file.exists()) {
+      await file.delete();
+    }
+  }
+
+  /// Shares a local backup file with external apps (Downloads, Drive, Files, Email, etc.).
+  Future<void> shareBackup(File file) async {
+    final name = file.path.split(Platform.pathSeparator).last;
+    await Share.shareXFiles(
+      [XFile(file.path, name: name, mimeType: 'application/json')],
+      subject: 'PriceMinder Data Backup',
+      text: 'Here is my PriceMinder subscription & ledger backup file ($name).',
+    );
   }
 }

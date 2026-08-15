@@ -428,6 +428,10 @@ class NotificationService {
     }
   }
 
+  Future<void> cancelAll() async {
+    await _plugin.cancelAll();
+  }
+
   Future<void> rescheduleAll(List<AppEntry> apps) async {
     final active = apps.where((a) => a.isActiveSubscription).toList();
 
@@ -567,11 +571,22 @@ class NotificationService {
         .toList();
   }
 
-  Future<void> requestExactAlarmPermission() async {
+  Future<bool> requestExactAlarmPermission() async {
     final android = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
-    await android?.requestExactAlarmsPermission();
+    final granted = await android?.requestExactAlarmsPermission();
+    return granted ?? true;
+  }
+
+  /// Always fires an immediate test reminder on the device with sound/vibration.
+  Future<void> sendTestNotificationNow() async {
+    await _plugin.show(
+      999999999,
+      'PriceMinder Test Alert 🔔',
+      'This is an immediate test notification. Netflix Standard renewal is coming in 3 days for \$16.99.',
+      _details('test_channel', 'Test Alerts'),
+    );
   }
 }

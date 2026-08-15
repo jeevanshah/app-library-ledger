@@ -184,6 +184,200 @@ class StorageService {
     }
   }
 
+  /// Export all user subscriptions, categories, and ledger entries as a JSON string.
+  Future<String> exportAllJson() async {
+    final apps = await getApps();
+    final categories = await getCategories();
+    final ledger = await getSpendLedger();
+    final data = {
+      'version': 1,
+      'exportedAt': DateTime.now().toIso8601String(),
+      'apps': apps.map((a) => a.toJson()).toList(),
+      'categories': categories.map((c) => c.toJson()).toList(),
+      'ledger': ledger.map((l) => l.toJson()).toList(),
+    };
+    return const JsonEncoder.withIndent('  ').convert(data);
+  }
+
+  /// Import user subscriptions, categories, and ledger entries from a JSON string.
+  Future<bool> importAllJson(String rawJson) async {
+    try {
+      final decoded = jsonDecode(rawJson) as Map<String, dynamic>;
+      if (decoded.containsKey('apps')) {
+        final List<dynamic> appsList = decoded['apps'];
+        final apps = appsList.map((e) => AppEntry.fromJson(e as Map<String, dynamic>)).toList();
+        await _saveApps(apps);
+        await NotificationService().rescheduleAll(apps);
+      }
+      if (decoded.containsKey('categories')) {
+        final List<dynamic> catsList = decoded['categories'];
+        final cats = catsList.map((e) => Category.fromJson(e as Map<String, dynamic>)).toList();
+        await _saveCategories(cats);
+      }
+      if (decoded.containsKey('ledger')) {
+        final List<dynamic> ledgerList = decoded['ledger'];
+        final ledger = ledgerList.map((e) => SpendLedgerEntry.fromJson(e as Map<String, dynamic>)).toList();
+        await _saveSpendLedger(ledger);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Error importing JSON data: $e');
+      return false;
+    }
+  }
+
+  /// Reset all stored apps, ledger, and restore default categories.
+  Future<void> clearAllData() async {
+    await _prefs.remove(_appsKey);
+    await _prefs.remove(_ledgerKey);
+    await _prefs.remove(_categoriesKey);
+    await NotificationService().cancelAll();
+  }
+
+  /// Injects realistic test subscriptions and 4-month spend history for diagnostic testing.
+  Future<void> seedSampleData() async {
+    final now = DateTime.now();
+    final apps = <AppEntry>[
+      AppEntry(
+        id: 'sample_netflix',
+        name: 'Netflix Standard',
+        appStoreLink: '',
+        category: 'Media / Streaming',
+        createdAt: now.subtract(const Duration(days: 120)),
+        isActiveSubscription: true,
+        billingCycle: 'monthly',
+        subscriptionCost: 16.99,
+        nextRenewalDate: now.add(const Duration(days: 4)),
+      ),
+      AppEntry(
+        id: 'sample_spotify',
+        name: 'Spotify Premium',
+        appStoreLink: '',
+        category: 'Media / Streaming',
+        createdAt: now.subtract(const Duration(days: 90)),
+        isActiveSubscription: true,
+        billingCycle: 'monthly',
+        subscriptionCost: 6.99,
+        isPromotionalPrice: true,
+        regularPrice: 13.99,
+        promotionEndsDate: now.add(const Duration(days: 12)),
+        nextRenewalDate: now.add(const Duration(days: 12)),
+      ),
+      AppEntry(
+        id: 'sample_icloud',
+        name: 'iCloud+ 200GB',
+        appStoreLink: '',
+        category: 'Utilities',
+        createdAt: now.subtract(const Duration(days: 180)),
+        isActiveSubscription: true,
+        billingCycle: 'monthly',
+        subscriptionCost: 4.49,
+        nextRenewalDate: now.add(const Duration(days: 18)),
+      ),
+      AppEntry(
+        id: 'sample_chatgpt',
+        name: 'ChatGPT Plus',
+        appStoreLink: '',
+        category: 'Productivity',
+        createdAt: now.subtract(const Duration(days: 60)),
+        isActiveSubscription: true,
+        billingCycle: 'monthly',
+        subscriptionCost: 20.00,
+        nextRenewalDate: now.add(const Duration(days: 25)),
+      ),
+      AppEntry(
+        id: 'sample_audible',
+        name: 'Audible Membership',
+        appStoreLink: '',
+        category: 'Education',
+        createdAt: now.subtract(const Duration(days: 45)),
+        isActiveSubscription: true,
+        billingCycle: 'monthly',
+        subscriptionCost: 7.99,
+        isPromotionalPrice: true,
+        regularPrice: 16.45,
+        promotionEndsDate: now.add(const Duration(days: 28)),
+        nextRenewalDate: now.add(const Duration(days: 28)),
+      ),
+    ];
+
+    await _saveApps(apps);
+
+    // Build historical ledger entries for the past 4 months
+    final ledger = <SpendLedgerEntry>[];
+    for (var m = 4; m >= 1; m--) {
+      final billDate = DateTime(now.year, now.month - m, 15);
+      ledger.add(
+        SpendLedgerEntry(
+          entryId: 'sample_netflix',
+          appName: 'Netflix Standard',
+          date: billDate,
+          amount: 16.99,
+          kind: LedgerEventKind.billed,
+          category: 'Media / Streaming',
+        ),
+      );
+      ledger.add(
+        SpendLedgerEntry(
+          entryId: 'sample_spotify',
+          appName: 'Spotify Premium',
+          date: billDate,
+          amount: 6.99,
+          kind: LedgerEventKind.billed,
+          category: 'Media / Streaming',
+        ),
+      );
+      ledger.add(
+        SpendLedgerEntry(
+          entryId: 'sample_icloud',
+          appName: 'iCloud+ 200GB',
+          date: billDate,
+          amount: 4.49,
+          kind: LedgerEventKind.billed,
+          category: 'Utilities',
+        ),
+      );
+      if (m <= 2) {
+        ledger.add(
+          SpendLedgerEntry(
+            entryId: 'sample_chatgpt',
+            appName: 'ChatGPT Plus',
+            date: billDate,
+            amount: 20.00,
+            kind: LedgerEventKind.billed,
+            category: 'Productivity',
+          ),
+        );
+      }
+    }
+
+    // Add a price changed event for Netflix from 14.99 -> 16.99 2 months ago
+    ledger.add(
+      SpendLedgerEntry(
+        entryId: 'sample_netflix',
+        appName: 'Netflix Standard',
+        date: DateTime(now.year, now.month - 2, 10),
+        amount: 16.99,
+        previousAmount: 14.99,
+        kind: LedgerEventKind.priceChanged,
+        category: 'Media / Streaming',
+      ),
+    );
+
+    await _saveSpendLedger(ledger);
+    await NotificationService().rescheduleAll(apps);
+  }
+
+  /// Returns raw dump of stored keys in SharedPreferences.
+  Map<String, dynamic> getRawDatabaseDump() {
+    final keys = _prefs.getKeys();
+    final map = <String, dynamic>{};
+    for (final k in keys) {
+      map[k] = _prefs.get(k);
+    }
+    return map;
+  }
+
   // Kept in sync with AppTokens.categories — same names, same hex, so the
   // seeded default and the token-driven lookup never disagree. None of
   // these use green/yellow/orange/red: those are reserved for savings,
