@@ -169,17 +169,17 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppTokens.gold.withValues(alpha: 0.08),
+                  color: AppTokens.brandStart.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: AppTokens.gold.withValues(alpha: 0.2),
+                    color: AppTokens.brandStart.withValues(alpha: 0.2),
                   ),
                 ),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.lock_rounded,
-                      color: AppTokens.gold,
+                      color: AppTokens.brandStart,
                       size: 16,
                     ),
                     const SizedBox(width: 10),
@@ -200,8 +200,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             ),
             Expanded(
               child: _scanning
-                  ? const Center(
-                      child: CircularProgressIndicator(color: AppTokens.gold),
+                  ? Center(
+                      child: CircularProgressIndicator(color: AppTokens.brandStart),
                     )
                   : ListView(
                       padding: const EdgeInsets.symmetric(horizontal: 22),
@@ -277,7 +277,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   height: 54,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      gradient: AppTokens.goldGradient,
+                      gradient: AppTokens.brandGradient,
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Material(
@@ -287,7 +287,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         onTap: _saving ? null : _confirm,
                         child: Center(
                           child: _saving
-                              ? const SizedBox(
+                              ? SizedBox(
                                   height: 22,
                                   width: 22,
                                   child: CircularProgressIndicator(
@@ -328,7 +328,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 14),
         constraints: const BoxConstraints(minHeight: 48),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(color: AppTokens.hairline, width: 1),
           ),
@@ -389,15 +389,15 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 width: 22,
                 height: 22,
                 decoration: BoxDecoration(
-                  color: checked ? AppTokens.gold : Colors.transparent,
+                  color: checked ? AppTokens.brandStart : Colors.transparent,
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
-                    color: checked ? AppTokens.gold : AppTokens.hairlineStrong,
+                    color: checked ? AppTokens.brandStart : AppTokens.hairlineStrong,
                     width: checked ? 0 : 1.5,
                   ),
                 ),
                 child: checked
-                    ? const Icon(
+                    ? Icon(
                         Icons.check_rounded,
                         size: 14,
                         color: AppTokens.screenBg,
@@ -467,19 +467,19 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         constraints: const BoxConstraints(minHeight: 48),
         decoration: BoxDecoration(
           color: selected
-              ? AppTokens.gold.withValues(alpha: 0.12)
+              ? AppTokens.brandStart.withValues(alpha: 0.12)
               : AppTokens.fieldBg,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: selected
-                ? AppTokens.gold.withValues(alpha: 0.3)
+                ? AppTokens.brandStart.withValues(alpha: 0.3)
                 : AppTokens.hairline,
           ),
         ),
         child: Text(
           entry.name,
           style: GoogleFonts.plusJakartaSans(
-            color: selected ? AppTokens.gold : AppTokens.textMuted,
+            color: selected ? AppTokens.brandStart : AppTokens.textMuted,
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),
@@ -541,8 +541,8 @@ class _ScanReviewSheetState extends State<_ScanReviewSheet> {
       lastDate: DateTime(now.year + 5),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.dark(primary: AppTokens.gold),
-          dialogTheme: const DialogThemeData(backgroundColor: AppTokens.cardBg),
+          colorScheme: ColorScheme.light(primary: AppTokens.brandStart),
+          dialogTheme: DialogThemeData(backgroundColor: AppTokens.cardBg),
         ),
         child: child!,
       ),
@@ -579,16 +579,16 @@ class _ScanReviewSheetState extends State<_ScanReviewSheet> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? AppTokens.gold.withValues(alpha: 0.12) : AppTokens.fieldBg,
+          color: selected ? AppTokens.brandStart.withValues(alpha: 0.12) : AppTokens.fieldBg,
           borderRadius: BorderRadius.circular(AppTokens.rPill),
           border: Border.all(
-            color: selected ? AppTokens.gold.withValues(alpha: 0.3) : AppTokens.hairline,
+            color: selected ? AppTokens.brandStart.withValues(alpha: 0.3) : AppTokens.hairline,
           ),
         ),
         child: Text(
           label,
           style: GoogleFonts.plusJakartaSans(
-            color: selected ? AppTokens.gold : AppTokens.textMuted,
+            color: selected ? AppTokens.brandStart : AppTokens.textMuted,
             fontSize: 11,
             fontWeight: FontWeight.w600,
           ),
@@ -639,15 +639,15 @@ class _ScanReviewSheetState extends State<_ScanReviewSheet> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(AppTokens.rInput),
-                      borderSide: const BorderSide(color: AppTokens.hairline),
+                      borderSide: BorderSide(color: AppTokens.hairline),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(AppTokens.rInput),
-                      borderSide: const BorderSide(color: AppTokens.hairline),
+                      borderSide: BorderSide(color: AppTokens.hairline),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(AppTokens.rInput),
-                      borderSide: const BorderSide(color: AppTokens.gold),
+                      borderSide: BorderSide(color: AppTokens.brandStart),
                     ),
                   ),
                 ),
@@ -691,7 +691,7 @@ class _ScanReviewSheetState extends State<_ScanReviewSheet> {
       maxChildSize: 0.92,
       expand: false,
       builder: (context, scrollController) => Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppTokens.cardBg,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -753,7 +753,7 @@ class _ScanReviewSheetState extends State<_ScanReviewSheet> {
                   height: 52,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      gradient: AppTokens.goldGradient,
+                      gradient: AppTokens.brandGradient,
                       borderRadius: BorderRadius.circular(AppTokens.rInput),
                     ),
                     child: Material(

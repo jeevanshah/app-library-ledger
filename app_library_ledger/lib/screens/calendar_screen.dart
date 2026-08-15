@@ -7,6 +7,7 @@ import '../models/category_model.dart';
 import '../models/spend_ledger_entry.dart';
 import '../services/analytics_service.dart';
 import '../theme/app_tokens.dart';
+import '../widgets/hero_empty_state.dart';
 import 'add_app_screen.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -141,7 +142,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       child: Container(
         constraints: const BoxConstraints(minHeight: 48),
         padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           border: Border(bottom: BorderSide(color: AppTokens.hairline)),
         ),
         child: Row(
@@ -218,17 +219,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
       lastDate: DateTime(now.year + 10),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.dark(
-            primary: AppTokens.gold,
-            onPrimary: AppTokens.screenBg,
+          colorScheme: ColorScheme.light(
+            primary: AppTokens.brandStart,
+            onPrimary: Colors.white,
             surface: AppTokens.cardBg,
             onSurface: AppTokens.textPrimary,
           ),
-          dialogTheme: const DialogThemeData(backgroundColor: AppTokens.cardBg),
+          dialogTheme: DialogThemeData(backgroundColor: AppTokens.cardBg),
           textTheme: GoogleFonts.plusJakartaSansTextTheme(Theme.of(ctx).textTheme)
               .apply(bodyColor: AppTokens.textPrimary, displayColor: AppTokens.textStrong),
           textButtonTheme: TextButtonThemeData(
-            style: TextButton.styleFrom(foregroundColor: AppTokens.gold),
+            style: TextButton.styleFrom(foregroundColor: AppTokens.brandStart),
           ),
         ),
         child: child!,
@@ -277,8 +278,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
         children: [
           GestureDetector(
             onTap: _prevMonth,
-            child: const Padding(
-              padding: EdgeInsets.all(10),
+            child: Padding(
+              padding: const EdgeInsets.all(10),
               child: Icon(
                 Icons.chevron_left_rounded,
                 color: AppTokens.textPrimary,
@@ -304,7 +305,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    const Icon(
+                    Icon(
                       Icons.expand_more_rounded,
                       color: AppTokens.textFaint,
                       size: 20,
@@ -316,8 +317,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
           GestureDetector(
             onTap: _nextMonth,
-            child: const Padding(
-              padding: EdgeInsets.all(10),
+            child: Padding(
+              padding: const EdgeInsets.all(10),
               child: Icon(
                 Icons.chevron_right_rounded,
                 color: AppTokens.textPrimary,
@@ -497,13 +498,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
       decoration: isToday
           ? BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: AppTokens.gold, width: 1.5),
+              border: Border.all(color: AppTokens.brandStart, width: 1.5),
             )
           : null,
       child: Text(
         '${day.day}',
         style: GoogleFonts.spaceGrotesk(
-          color: isToday ? AppTokens.gold : AppTokens.textPrimary,
+          color: isToday ? AppTokens.brandStart : AppTokens.textPrimary,
           fontSize: 13,
           fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
         ),
@@ -593,19 +594,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
             ),
             if (calendarEvents.all.isEmpty) ...[
-              const SizedBox(height: 24),
-              Icon(
-                Icons.event_available_rounded,
-                color: AppTokens.textFaint,
-                size: 32,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'No billing events in $monthLabel',
-                style: GoogleFonts.plusJakartaSans(
-                  color: AppTokens.textMuted,
-                  fontSize: 13,
-                ),
+              const SizedBox(height: 12),
+              HeroEmptyState(
+                illustration: 'calendar_bell_alt',
+                title: 'Nothing due',
+                subtitle: 'No billing events in $monthLabel.',
+                illustrationSize: 64,
+                compact: true,
+                center: false,
               ),
             ],
             const Spacer(),

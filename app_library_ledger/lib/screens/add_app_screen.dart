@@ -14,7 +14,6 @@ import '../services/catalog_service.dart';
 import '../services/storage_service.dart';
 import '../services/notification_service.dart';
 import '../theme/app_tokens.dart';
-import '../theme/app_theme.dart';
 import 'discovery_screen.dart';
 
 class AddAppScreen extends StatefulWidget {
@@ -40,6 +39,8 @@ class _AddAppScreenState extends State<AddAppScreen>
   final _notesCtrl = TextEditingController();
   final _costCtrl = TextEditingController();
   final _regularCtrl = TextEditingController();
+  final _searchFocus = FocusNode();
+  bool _searchFocused = false;
 
   late List<Category> _categories;
   String? _category;
@@ -99,6 +100,9 @@ class _AddAppScreenState extends State<AddAppScreen>
   @override
   void initState() {
     super.initState();
+    _searchFocus.addListener(() {
+      if (mounted) setState(() => _searchFocused = _searchFocus.hasFocus);
+    });
     _categories = List<Category>.from(widget.categories);
     String? initialCategory = _categories.isNotEmpty
         ? _categories.first.name
@@ -154,7 +158,13 @@ class _AddAppScreenState extends State<AddAppScreen>
       _isSub = true;
       _category = 'Utilities';
       if (_findCategory('Utilities') == null) {
-        _categories.add(Category(name: 'Utilities', color: AppTokens.categoryColor('Utilities'), isCustom: false));
+        _categories.add(
+          Category(
+            name: 'Utilities',
+            color: AppTokens.categoryColor('Utilities'),
+            isCustom: false,
+          ),
+        );
       }
     }
 
@@ -192,7 +202,9 @@ class _AddAppScreenState extends State<AddAppScreen>
         _searchDebounce?.cancel();
         _searchDebounce = Timer(const Duration(milliseconds: 150), () {
           if (!mounted) return;
-          setState(() => _searchResults = _searchCatalog(_nameCtrl.text.trim()));
+          setState(
+            () => _searchResults = _searchCatalog(_nameCtrl.text.trim()),
+          );
         });
       }
       _ocrFilledFields.remove('name');
@@ -263,15 +275,21 @@ class _AddAppScreenState extends State<AddAppScreen>
             content: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const SizedBox(
+                SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: AppTokens.gold),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppTokens.brandStart,
+                  ),
                 ),
                 const SizedBox(width: 16),
                 Text(
                   'Reading your bill…',
-                  style: GoogleFonts.plusJakartaSans(color: AppTokens.textPrimary, fontSize: 14),
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppTokens.textPrimary,
+                    fontSize: 14,
+                  ),
                 ),
               ],
             ),
@@ -281,7 +299,12 @@ class _AddAppScreenState extends State<AddAppScreen>
                   cancelled = true;
                   Navigator.pop(dialogCtx);
                 },
-                child: Text('Cancel', style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted)),
+                child: Text(
+                  'Cancel',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppTokens.textMuted,
+                  ),
+                ),
               ),
             ],
           ),
@@ -292,7 +315,9 @@ class _AddAppScreenState extends State<AddAppScreen>
     String recognizedText = '';
     try {
       final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
-      final result = await recognizer.processImage(InputImage.fromFilePath(photo.path));
+      final result = await recognizer.processImage(
+        InputImage.fromFilePath(photo.path),
+      );
       await recognizer.close();
       recognizedText = result.text;
     } catch (_) {
@@ -306,7 +331,11 @@ class _AddAppScreenState extends State<AddAppScreen>
 
     if (recognizedText.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Couldn't read any text from that photo — try again or fill it in manually.")),
+        const SnackBar(
+          content: Text(
+            "Couldn't read any text from that photo — try again or fill it in manually.",
+          ),
+        ),
       );
       return;
     }
@@ -357,7 +386,11 @@ class _AddAppScreenState extends State<AddAppScreen>
     if (!mounted) return;
     if (!anyGuess) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Couldn't confidently read the details — fill them in below.")),
+        const SnackBar(
+          content: Text(
+            "Couldn't confidently read the details — fill them in below.",
+          ),
+        ),
       );
     } else {
       HapticFeedback.mediumImpact();
@@ -371,7 +404,8 @@ class _AddAppScreenState extends State<AddAppScreen>
     for (final line in lines) {
       final lower = line.toLowerCase();
       for (final e in entries) {
-        if (e.name.length >= 3 && lower.contains(e.name.toLowerCase())) return e;
+        if (e.name.length >= 3 && lower.contains(e.name.toLowerCase()))
+          return e;
       }
     }
     return null;
@@ -380,7 +414,12 @@ class _AddAppScreenState extends State<AddAppScreen>
   double? _guessPrice(List<String> lines) {
     final priceRegex = RegExp(r'\$?\s?(\d{1,4}(?:,\d{3})*\.\d{2})');
     const preferKeywords = [
-      'total', 'amount due', 'charged', 'monthly', 'plan cost', 'you paid',
+      'total',
+      'amount due',
+      'charged',
+      'monthly',
+      'plan cost',
+      'you paid',
     ];
     const avoidKeywords = ['subtotal', 'tax', 'gst', 'vat'];
 
@@ -393,15 +432,26 @@ class _AddAppScreenState extends State<AddAppScreen>
       final value = double.tryParse(match.group(1)!.replaceAll(',', ''));
       if (value == null) continue;
       if (avoidKeywords.any(lower.contains)) continue;
-      if (preferred == null && preferKeywords.any(lower.contains)) preferred = value;
+      if (preferred == null && preferKeywords.any(lower.contains))
+        preferred = value;
       if (fallback == null || value > fallback) fallback = value;
     }
     return preferred ?? fallback;
   }
 
   static const _ocrMonths = {
-    'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
-    'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+    'jan': 1,
+    'feb': 2,
+    'mar': 3,
+    'apr': 4,
+    'may': 5,
+    'jun': 6,
+    'jul': 7,
+    'aug': 8,
+    'sep': 9,
+    'oct': 10,
+    'nov': 11,
+    'dec': 12,
   };
 
   DateTime? _guessDate(List<String> lines) {
@@ -480,6 +530,7 @@ class _AddAppScreenState extends State<AddAppScreen>
     _regularCtrl.dispose();
     _staggerCtrl.dispose();
     _highlightCtrl.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -548,37 +599,17 @@ class _AddAppScreenState extends State<AddAppScreen>
   }) async {
     HapticFeedback.selectionClick();
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final initialDate = current != null
-        ? DateTime(current.year, current.month, current.day)
-        : today;
-    final firstDate = initialDate.isBefore(today) ? initialDate : today;
-    final lastDate = initialDate.isAfter(DateTime(2099))
-        ? initialDate
-        : DateTime(2099);
+    final initialDate = current ?? DateTime(now.year, now.month, now.day);
 
-    final picked = await showDatePicker(
+    await showModalBottomSheet<void>(
       context: context,
-      initialDate: initialDate,
-      firstDate: firstDate,
-      lastDate: lastDate,
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.dark(
-            primary: AppTokens.brandEnd,
-            onPrimary: Colors.white,
-            surface: AppTokens.cardBg,
-            onSurface: AppTokens.textPrimary,
-          ),
-          dialogTheme: const DialogThemeData(backgroundColor: AppTokens.cardBg),
-        ),
-        child: child!,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _CustomDatePickerSheet(
+        initialDate: initialDate,
+        onDateSelected: onPicked,
       ),
     );
-    if (!mounted) return;
-    if (picked != null) {
-      onPicked(picked);
-    }
   }
 
   bool _validate() {
@@ -596,12 +627,18 @@ class _AddAppScreenState extends State<AddAppScreen>
     });
     final ok = !nameEmpty && !costMissing && !dateMissing;
     if (!ok) {
-      final target = nameEmpty ? _nameKey
-          : costMissing ? _billingKey
+      final target = nameEmpty
+          ? _nameKey
+          : costMissing
+          ? _billingKey
           : _renewalKey;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (target.currentContext != null) {
-          Scrollable.ensureVisible(target.currentContext!, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+          Scrollable.ensureVisible(
+            target.currentContext!,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
         }
       });
     }
@@ -865,9 +902,10 @@ class _AddAppScreenState extends State<AddAppScreen>
     required String subtitle,
     required bool value,
     required ValueChanged<bool> onChanged,
+    Widget? icon,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: AppTokens.fieldBg,
         borderRadius: BorderRadius.circular(AppTokens.rInput),
@@ -875,6 +913,24 @@ class _AddAppScreenState extends State<AddAppScreen>
       ),
       child: Row(
         children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: value
+                  ? AppTokens.brandStart.withValues(alpha: 0.12)
+                  : AppTokens.hairline.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: icon ??
+                flatIcon(
+                  'tag_orange',
+                  color: value ? AppTokens.brandStart : AppTokens.textFaint,
+                  size: 18,
+                ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -884,15 +940,16 @@ class _AddAppScreenState extends State<AddAppScreen>
                   title,
                   style: GoogleFonts.plusJakartaSans(
                     color: AppTokens.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
+                const SizedBox(height: 1),
                 Text(
                   subtitle,
                   style: GoogleFonts.plusJakartaSans(
                     color: AppTokens.textMuted,
-                    fontSize: 12,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -902,7 +959,7 @@ class _AddAppScreenState extends State<AddAppScreen>
           Switch(
             value: value,
             activeThumbColor: Colors.white,
-            activeTrackColor: AppTokens.brandEnd,
+            activeTrackColor: AppTokens.brandStart,
             inactiveThumbColor: AppTokens.textFaint,
             inactiveTrackColor: AppTokens.cardBgRaised,
             onChanged: (v) {
@@ -919,7 +976,7 @@ class _AddAppScreenState extends State<AddAppScreen>
     required DateTime? date,
     required String placeholder,
     required VoidCallback onTap,
-    IconData icon = Icons.calendar_today_rounded,
+    String icon = 'calendar_dark',
     bool error = false,
   }) {
     final text = date == null
@@ -929,8 +986,8 @@ class _AddAppScreenState extends State<AddAppScreen>
       borderRadius: BorderRadius.circular(AppTokens.rInput),
       onTap: onTap,
       child: Container(
-        height: 52,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        height: 54,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: AppTokens.fieldBg,
           borderRadius: BorderRadius.circular(AppTokens.rInput),
@@ -941,7 +998,20 @@ class _AddAppScreenState extends State<AddAppScreen>
         ),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: AppTokens.textFaint),
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: AppTokens.brandStart.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              alignment: Alignment.center,
+              child: flatIcon(
+                'calendar_orange',
+                color: AppTokens.brandStart,
+                size: 16,
+              ),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -950,12 +1020,12 @@ class _AddAppScreenState extends State<AddAppScreen>
                   color: date == null
                       ? AppTokens.textPlaceholder
                       : AppTokens.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 14.5,
+                  fontWeight: date == null ? FontWeight.w500 : FontWeight.w600,
                 ),
               ),
             ),
-            const Icon(
+            Icon(
               Icons.chevron_right_rounded,
               size: 18,
               color: AppTokens.textFaint,
@@ -974,8 +1044,8 @@ class _AddAppScreenState extends State<AddAppScreen>
         borderRadius: BorderRadius.circular(AppTokens.rInput),
         onTap: _openCategoryPicker,
         child: Container(
-          height: 52,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          height: 54,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
             color: AppTokens.fieldBg,
             borderRadius: BorderRadius.circular(AppTokens.rInput),
@@ -983,14 +1053,36 @@ class _AddAppScreenState extends State<AddAppScreen>
           ),
           child: Row(
             children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: cat?.color ?? AppTokens.textFaint,
-                  shape: BoxShape.circle,
+              if (cat != null && AppTokens.categories.containsKey(cat.name))
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: AppTokens.brandStart.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  alignment: Alignment.center,
+                  child: categoryIcon(cat.name, size: 22),
+                )
+              else
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: (cat?.color ?? AppTokens.textFaint)
+                        .withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  alignment: Alignment.center,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: cat?.color ?? AppTokens.textFaint,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
                 ),
-              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -999,12 +1091,12 @@ class _AddAppScreenState extends State<AddAppScreen>
                     color: cat != null
                         ? AppTokens.textPrimary
                         : AppTokens.textPlaceholder,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-              const Icon(
+              Icon(
                 Icons.keyboard_arrow_down_rounded,
                 color: AppTokens.textFaint,
                 size: 20,
@@ -1021,24 +1113,33 @@ class _AddAppScreenState extends State<AddAppScreen>
     if (prefill != null) {
       return _labeled(
         'Plan type',
-        Row(children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              gradient: AppTokens.brandGradient,
-              borderRadius: BorderRadius.circular(AppTokens.rInput),
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                gradient: AppTokens.brandGradient,
+                borderRadius: BorderRadius.circular(AppTokens.rInput),
+              ),
+              child: Text(
+                prefill == 'nbn' ? 'NBN' : 'Mobile',
+                style: GoogleFonts.plusJakartaSans(
+                  color: AppTokens.screenBg,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
-            child: Text(
-              prefill == 'nbn' ? 'NBN' : 'Mobile',
-              style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w700),
+            const SizedBox(width: 10),
+            Text(
+              'Set from Offers tab',
+              style: GoogleFonts.plusJakartaSans(
+                color: AppTokens.textMuted,
+                fontSize: 12.5,
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            'Set from Offers tab',
-            style: GoogleFonts.plusJakartaSans(color: AppTokens.textMuted, fontSize: 12.5),
-          ),
-        ]),
+          ],
+        ),
       );
     }
     return _labeled(
@@ -1055,18 +1156,24 @@ class _AddAppScreenState extends State<AddAppScreen>
           children: [
             Expanded(
               child: GestureDetector(
-                onTap: () => setState(() => _serviceType = _serviceType == 'nbn' ? null : 'nbn'),
+                onTap: () => setState(
+                  () => _serviceType = _serviceType == 'nbn' ? null : 'nbn',
+                ),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   decoration: BoxDecoration(
-                    gradient: _serviceType == 'nbn' ? AppTokens.brandGradient : null,
+                    gradient: _serviceType == 'nbn'
+                        ? AppTokens.brandGradient
+                        : null,
                     borderRadius: BorderRadius.circular(AppTokens.rInput - 3),
                   ),
                   alignment: Alignment.center,
                   child: Text(
                     'NBN',
                     style: GoogleFonts.plusJakartaSans(
-                      color: _serviceType == 'nbn' ? Colors.white : AppTokens.textFaint,
+                      color: _serviceType == 'nbn'
+                          ? AppTokens.screenBg
+                          : AppTokens.textFaint,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
                     ),
@@ -1076,18 +1183,25 @@ class _AddAppScreenState extends State<AddAppScreen>
             ),
             Expanded(
               child: GestureDetector(
-                onTap: () => setState(() => _serviceType = _serviceType == 'mobile' ? null : 'mobile'),
+                onTap: () => setState(
+                  () =>
+                      _serviceType = _serviceType == 'mobile' ? null : 'mobile',
+                ),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   decoration: BoxDecoration(
-                    gradient: _serviceType == 'mobile' ? AppTokens.brandGradient : null,
+                    gradient: _serviceType == 'mobile'
+                        ? AppTokens.brandGradient
+                        : null,
                     borderRadius: BorderRadius.circular(AppTokens.rInput - 3),
                   ),
                   alignment: Alignment.center,
                   child: Text(
                     'Mobile',
                     style: GoogleFonts.plusJakartaSans(
-                      color: _serviceType == 'mobile' ? Colors.white : AppTokens.textFaint,
+                      color: _serviceType == 'mobile'
+                          ? AppTokens.screenBg
+                          : AppTokens.textFaint,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
                     ),
@@ -1122,7 +1236,16 @@ class _AddAppScreenState extends State<AddAppScreen>
                   gradient: _cycle == 'monthly'
                       ? AppTokens.brandGradient
                       : null,
-                  borderRadius: BorderRadius.circular(AppTokens.rInput - 3),
+                  borderRadius: BorderRadius.circular(AppTokens.rInput - 4),
+                  boxShadow: _cycle == 'monthly'
+                      ? [
+                          BoxShadow(
+                            color: AppTokens.brandStart.withValues(alpha: 0.3),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
                 ),
                 alignment: Alignment.center,
                 height: double.infinity,
@@ -1146,7 +1269,16 @@ class _AddAppScreenState extends State<AddAppScreen>
                 duration: const Duration(milliseconds: 200),
                 decoration: BoxDecoration(
                   gradient: _cycle == 'yearly' ? AppTokens.brandGradient : null,
-                  borderRadius: BorderRadius.circular(AppTokens.rInput - 3),
+                  borderRadius: BorderRadius.circular(AppTokens.rInput - 4),
+                  boxShadow: _cycle == 'yearly'
+                      ? [
+                          BoxShadow(
+                            color: AppTokens.brandStart.withValues(alpha: 0.3),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
                 ),
                 alignment: Alignment.center,
                 height: double.infinity,
@@ -1168,41 +1300,76 @@ class _AddAppScreenState extends State<AddAppScreen>
     );
   }
 
-  Widget _promoQuestionRow() {
-    Widget option(String label, bool value) {
-      final sel = _isPromo == value;
-      return Expanded(
-        child: GestureDetector(
-          onTap: () {
-            HapticFeedback.selectionClick();
-            setState(() => _isPromo = value);
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            height: 48,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              gradient: sel ? AppTokens.brandGradient : null,
-              color: sel ? null : AppTokens.fieldBg,
-              borderRadius: BorderRadius.circular(AppTokens.rInput),
-              border: Border.all(color: sel ? Colors.transparent : AppTokens.hairline),
-            ),
-            child: Text(
-              label,
-              style: GoogleFonts.plusJakartaSans(
-                color: sel ? Colors.white : AppTokens.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
+  // Same-line Billing Cycle + Promo Price Question
+  Widget _cadenceAndPromoRow() {
+    return Row(
+      children: [
+        // Left: Billing Cycle (Monthly / Yearly)
+        Expanded(
+          flex: 6,
+          child: _labeled(
+            'Billing cycle',
+            _cyclePill(),
+          ),
+        ),
+        const SizedBox(width: 10),
+        // Right: Promo price toggle
+        Expanded(
+          flex: 5,
+          child: _labeled(
+            'Promo deal?',
+            GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                setState(() => _isPromo = !_isPromo);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                height: 52,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  gradient: _isPromo ? AppTokens.brandGradient : null,
+                  color: _isPromo ? null : AppTokens.fieldBg,
+                  borderRadius: BorderRadius.circular(AppTokens.rInput),
+                  border: Border.all(
+                    color: _isPromo ? Colors.transparent : AppTokens.hairline,
+                  ),
+                  boxShadow: _isPromo
+                      ? [
+                          BoxShadow(
+                            color: AppTokens.brandStart.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      _isPromo
+                          ? Icons.local_offer_rounded
+                          : Icons.local_offer_outlined,
+                      size: 16,
+                      color: _isPromo ? Colors.white : AppTokens.textFaint,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _isPromo ? 'Promo (Yes)' : 'Standard',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: _isPromo ? Colors.white : AppTokens.textPrimary,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
-      );
-    }
-
-    return _labeled(
-      'Is this on a promo price?',
-      Row(children: [option('No', false), const SizedBox(width: 10), option('Yes', true)]),
+      ],
     );
   }
 
@@ -1213,12 +1380,13 @@ class _AddAppScreenState extends State<AddAppScreen>
         onTap();
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        alignment: Alignment.center,
         child: Text(
           'Not sure yet',
           style: GoogleFonts.plusJakartaSans(
             color: AppTokens.textMuted,
-            fontSize: 12.5,
+            fontSize: 12,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -1228,43 +1396,49 @@ class _AddAppScreenState extends State<AddAppScreen>
 
   Widget _priceChip(String text, bool selected, {bool muted = false}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: selected ? AppTokens.gold.withValues(alpha: 0.12) : AppTokens.fieldBg,
-        borderRadius: BorderRadius.circular(AppTokens.rPill),
+        gradient: selected ? AppTokens.brandGradient : null,
+        color: selected ? null : AppTokens.fieldBg,
+        borderRadius: BorderRadius.circular(AppTokens.rInput - 2),
         border: Border.all(
-          color: selected ? AppTokens.gold.withValues(alpha: 0.3) : AppTokens.hairline,
+          color: selected
+              ? Colors.transparent
+              : AppTokens.hairline,
         ),
+        boxShadow: selected
+            ? [
+                BoxShadow(
+                  color: AppTokens.brandStart.withValues(alpha: 0.3),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
       ),
       child: Text(
         text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
         style: muted
             ? GoogleFonts.plusJakartaSans(
                 color: AppTokens.textMuted,
-                fontSize: 12.5,
+                fontSize: 12,
                 fontWeight: FontWeight.w600,
               )
             : GoogleFonts.spaceGrotesk(
-                color: selected ? AppTokens.gold : AppTokens.textPrimary,
+                color: selected ? Colors.white : AppTokens.textPrimary,
                 fontSize: 12.5,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
       ),
     );
   }
 
-  /// Single unified price field, used for Cost (with real catalog tiers
-  /// when a match exists), Promo price, and Price-after-promo alike.
-  ///
-  /// Whether this shows preset chips or a plain text field is *derived*
-  /// from the controller's actual value — never a separately-tracked
-  /// flag that has to be remembered/backfilled — so a real existing
-  /// value (e.g. editing a $12.50 entry against $9.99/$14.99 tiers) is
-  /// never hidden behind an unselected chip row. [tiers] (when present)
-  /// are shown as chips; otherwise [_commonPrices] are shown as small
-  /// autofill chips *above* an always-visible text field, so typing a
-  /// non-preset value is never blocked behind a "Custom" tap.
+  /// Multi-column cost and pricing tiers field
   Widget _priceField({
     required String label,
     required TextEditingController controller,
@@ -1306,66 +1480,20 @@ class _AddAppScreenState extends State<AddAppScreen>
       );
     }
 
-    final ocrGuessed = ocrFieldKey != null && _ocrFilledFields.contains(ocrFieldKey);
+    final ocrGuessed =
+        ocrFieldKey != null && _ocrFilledFields.contains(ocrFieldKey);
     final text = controller.text;
-    final matchesTier = tiers.any((t) => t.monthlyPrice.toStringAsFixed(2) == text);
-    final showTierChips = tiers.isNotEmpty && !_costCustomLatch && (text.isEmpty || matchesTier);
+    final matchesTier = tiers.any(
+      (t) => t.monthlyPrice.toStringAsFixed(2) == text,
+    );
+    final showTierChips =
+        tiers.isNotEmpty && !_costCustomLatch && (text.isEmpty || matchesTier);
 
-    Widget field;
-    if (showTierChips) {
-      field = Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          ...tiers.map((t) {
-            final str = t.monthlyPrice.toStringAsFixed(2);
-            return GestureDetector(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                setState(() {
-                  controller.text = str;
-                  _ocrFilledFields.remove(ocrFieldKey);
-                });
-              },
-              child: _priceChip('${t.tierName} · \$$str', text == str),
-            );
-          }),
-          GestureDetector(
-            onTap: () {
-              HapticFeedback.selectionClick();
-              setState(() => _costCustomLatch = true);
-            },
-            child: _priceChip('Custom', false, muted: true),
-          ),
-        ],
-      );
-    } else {
-      field = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (tiers.isEmpty) ...[
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ..._commonPrices.map((p) {
-                  final str = p.toStringAsFixed(2);
-                  return GestureDetector(
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      setState(() {
-                        controller.text = str;
-                        _ocrFilledFields.remove(ocrFieldKey);
-                      });
-                    },
-                    child: _priceChip('\$$str', text == str),
-                  );
-                }),
-                if (allowUnsure && onUnsureToggle != null) _notSureChip(onUnsureToggle),
-              ],
-            ),
-            const SizedBox(height: 8),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _labeled(
+          label,
           _textField(
             controller: controller,
             hint: '0.00',
@@ -1374,14 +1502,84 @@ class _AddAppScreenState extends State<AddAppScreen>
             error: error,
             style: GoogleFonts.spaceGrotesk(
               color: AppTokens.textPrimary,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
             onChanged: (_) => _ocrFilledFields.remove(ocrFieldKey),
           ),
+          helper: ocrGuessed
+              ? 'Scanned — check this'
+              : (error ? requiredHelper : null),
+          error: error,
+        ),
+        const SizedBox(height: 8),
+        if (showTierChips) ...[
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: tiers.length + 1,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: 6,
+              crossAxisSpacing: 8,
+              childAspectRatio: 3.4,
+            ),
+            itemBuilder: (_, index) {
+              if (index < tiers.length) {
+                final t = tiers[index];
+                final str = t.monthlyPrice.toStringAsFixed(2);
+                final sel = text == str;
+                return GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      controller.text = str;
+                      _ocrFilledFields.remove(ocrFieldKey);
+                    });
+                  },
+                  child: _priceChip('${t.tierName} · \$$str', sel),
+                );
+              } else {
+                return GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() => _costCustomLatch = true);
+                  },
+                  child: _priceChip('Custom', false, muted: true),
+                );
+              }
+            },
+          ),
+        ] else ...[
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _commonPrices.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 6,
+              crossAxisSpacing: 8,
+              childAspectRatio: 2.8,
+            ),
+            itemBuilder: (_, index) {
+              final p = _commonPrices[index];
+              final str = p.toStringAsFixed(2);
+              final sel = text == str;
+              return GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() {
+                    controller.text = str;
+                    _ocrFilledFields.remove(ocrFieldKey);
+                  });
+                },
+                child: _priceChip('\$$str', sel),
+              );
+            },
+          ),
           if (tiers.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             GestureDetector(
               onTap: () {
                 HapticFeedback.selectionClick();
@@ -1391,24 +1589,225 @@ class _AddAppScreenState extends State<AddAppScreen>
                 });
               },
               child: Text(
-                'Use a listed price instead',
+                'Use a listed plan price instead',
                 style: GoogleFonts.plusJakartaSans(
-                  color: AppTokens.textMuted,
+                  color: AppTokens.brandStart,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
           ],
+          if (allowUnsure && onUnsureToggle != null) ...[
+            const SizedBox(height: 4),
+            _notSureChip(onUnsureToggle),
+          ],
         ],
-      );
-    }
+      ],
+    );
+  }
 
-    return _labeled(
-      label,
-      field,
-      helper: ocrGuessed ? 'Scanned — check this' : (error ? requiredHelper : null),
-      error: error,
+  // ── Beautiful Date Selector with 1-Tap Presets ─────────────
+
+  Widget _renewalDateSelector() {
+    final date = _renewal;
+    final formattedDate = date != null
+        ? DateFormat('EEE, d MMM yyyy').format(date)
+        : 'Select renewal date';
+    final daysUntil = date != null
+        ? date.difference(DateTime.now()).inDays + 1
+        : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Main Date Card
+        InkWell(
+          borderRadius: BorderRadius.circular(AppTokens.rInput),
+          onTap: () => _pickDate(
+            current: _renewal,
+            onPicked: (d) => setState(() {
+              _renewal = d;
+              _userTouchedDate = true;
+              _renewalError = false;
+              _ocrFilledFields.remove('renewal');
+            }),
+          ),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: BoxDecoration(
+              color: AppTokens.fieldBg,
+              borderRadius: BorderRadius.circular(AppTokens.rInput),
+              border: Border.all(
+                color: _renewalError ? AppTokens.danger : AppTokens.hairline,
+                width: _renewalError ? 1.5 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppTokens.brandStart.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  alignment: Alignment.center,
+                  child: flatIcon(
+                    'calendar_orange',
+                    color: AppTokens.brandStart,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        formattedDate,
+                        style: GoogleFonts.spaceGrotesk(
+                          color: date != null
+                              ? AppTokens.textPrimary
+                              : AppTokens.textPlaceholder,
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w700,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        daysUntil != null
+                            ? (daysUntil > 0
+                                ? 'Renews in $daysUntil days'
+                                : (daysUntil == 0
+                                    ? 'Renews today'
+                                    : 'Renewed ${-daysUntil} days ago'))
+                            : 'Set to get reminder alerts',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: date != null
+                              ? AppTokens.brandStart
+                              : AppTokens.textMuted,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppTokens.cardBg,
+                    borderRadius: BorderRadius.circular(AppTokens.rSmallPill),
+                    border: Border.all(color: AppTokens.hairline),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Change',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTokens.textMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 13,
+                        color: AppTokens.textMuted,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Quick 1-tap Presets Row
+        Row(
+          children: [
+            _quickDatePreset('Today', DateTime.now()),
+            const SizedBox(width: 6),
+            _quickDatePreset(
+              '+1 Month',
+              DateTime(
+                DateTime.now().year,
+                DateTime.now().month + 1,
+                DateTime.now().day,
+              ),
+            ),
+            const SizedBox(width: 6),
+            _quickDatePreset(
+              '+1 Year',
+              DateTime(
+                DateTime.now().year + 1,
+                DateTime.now().month,
+                DateTime.now().day,
+              ),
+            ),
+          ],
+        ),
+        if (_renewalError)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 2),
+            child: Text(
+              'Renewal date is required',
+              style: GoogleFonts.plusJakartaSans(
+                color: AppTokens.danger,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _quickDatePreset(String label, DateTime targetDate) {
+    final isSelected = _renewal != null &&
+        _renewal!.year == targetDate.year &&
+        _renewal!.month == targetDate.month &&
+        _renewal!.day == targetDate.day;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          setState(() {
+            _renewal = targetDate;
+            _userTouchedDate = true;
+            _renewalError = false;
+            _ocrFilledFields.remove('renewal');
+          });
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          height: 32,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppTokens.brandStart.withValues(alpha: 0.12)
+                : AppTokens.fieldBg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected ? AppTokens.brandStart : AppTokens.hairline,
+            ),
+          ),
+          child: Text(
+            label,
+            style: GoogleFonts.plusJakartaSans(
+              color: isSelected ? AppTokens.brandStart : AppTokens.textMuted,
+              fontSize: 11.5,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1416,13 +1815,14 @@ class _AddAppScreenState extends State<AddAppScreen>
     required String label,
     required String helper,
     required DateTime? date,
-    required IconData icon,
+    required String icon,
     required bool unsure,
     required ValueChanged<DateTime> onPicked,
     required VoidCallback onUnsureToggle,
     String? ocrFieldKey,
   }) {
-    final ocrGuessed = ocrFieldKey != null && _ocrFilledFields.contains(ocrFieldKey);
+    final ocrGuessed =
+        ocrFieldKey != null && _ocrFilledFields.contains(ocrFieldKey);
     if (unsure) {
       return _labeled(
         label,
@@ -1470,32 +1870,6 @@ class _AddAppScreenState extends State<AddAppScreen>
           error: false,
         ),
         _notSureChip(onUnsureToggle),
-      ],
-    );
-  }
-
-  Widget _costAndCycleRow() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: _priceField(
-            label: _isPromo ? 'Promo price' : 'Cost',
-            controller: _costCtrl,
-            tiers: _matchedCatalog?.pricingTiers ?? const [],
-            allowUnsure: _isPromo,
-            unsure: _isPromo && _promoCostUnsure,
-            onUnsureToggle: () => setState(() {
-              _promoCostUnsure = !_promoCostUnsure;
-              if (_promoCostUnsure) _costCtrl.clear();
-            }),
-            error: _costError,
-            requiredHelper: 'Cost is required',
-            ocrFieldKey: 'cost',
-          ),
-        ),
-        const SizedBox(width: 12),
-        SizedBox(width: 130, child: _labeled('Billing cycle', _cyclePill())),
       ],
     );
   }
@@ -1548,6 +1922,146 @@ class _AddAppScreenState extends State<AddAppScreen>
     );
   }
 
+  // ── Quick Action Cards (Scan Bill / Scan Phone) ──────────────
+
+  Widget _quickActionCards() {
+    return Row(
+      children: [
+        Expanded(
+          child: GestureDetector(
+            onTap: _scanBill,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppTokens.cardBg,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppTokens.hairline),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(
+                      alpha: AppTokens.isDark ? 0.2 : 0.04,
+                    ),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: AppTokens.brandStart.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    alignment: Alignment.center,
+                    child: flatIcon(
+                      'scan_frame_orange',
+                      size: 20,
+                      color: AppTokens.brandStart,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Scan bill',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppTokens.textPrimary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          'Auto-fill with ML',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppTokens.textMuted,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: GestureDetector(
+            onTap: _goScanPhone,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppTokens.cardBg,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppTokens.hairline),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(
+                      alpha: AppTokens.isDark ? 0.2 : 0.04,
+                    ),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: AppTokens.brandStart.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    alignment: Alignment.center,
+                    child: flatIcon(
+                      'search_orange',
+                      size: 20,
+                      color: AppTokens.brandStart,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Scan phone',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppTokens.textPrimary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          'Find installed',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppTokens.textMuted,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   // ── Search-first entry (replaces the plain "App Name" field in add mode) ──
 
   Widget _searchSection() {
@@ -1555,8 +2069,6 @@ class _AddAppScreenState extends State<AddAppScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _suggestedStrip(),
-        const SizedBox(height: 14),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppTokens.padContent),
           child: Column(
@@ -1582,99 +2094,155 @@ class _AddAppScreenState extends State<AddAppScreen>
                     ? CrossFadeState.showFirst
                     : CrossFadeState.showSecond,
                 firstChild: Padding(
-                  padding: const EdgeInsets.only(top: 14),
+                  padding: const EdgeInsets.only(top: 12),
                   child: _searchResultsList(),
                 ),
                 secondChild: const SizedBox(width: double.infinity),
               ),
+              const SizedBox(height: 12),
+              _quickActionCards(),
             ],
           ),
         ),
+        const SizedBox(height: 16),
+        _suggestedStrip(),
       ],
     );
   }
 
   Widget _searchField() {
     final matched = _matchedCatalog;
-    return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: AppTokens.fieldBg,
-        borderRadius: BorderRadius.circular(AppTokens.rInput),
-        border: Border.all(
-          color: _nameError ? AppTokens.danger : AppTokens.hairline,
-        ),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 28,
-            height: 28,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              child: matched != null
-                  ? _iconForCatalog(matched, size: 28)
-                  : const Icon(
-                      Icons.subscriptions_outlined,
-                      key: ValueKey('name-icon'),
-                      color: AppTokens.textFaint,
-                      size: 22,
-                    ),
-            ),
+    final active = _searchFocused || matched != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'WHAT ARE YOU ADDING?',
+          style: GoogleFonts.plusJakartaSans(
+            color: AppTokens.textFaint,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.5,
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: TextField(
-              controller: _nameCtrl,
-              cursorColor: AppTokens.brandEnd,
-              style: GoogleFonts.plusJakartaSans(
-                color: AppTokens.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
+        ),
+        const SizedBox(height: 8),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          height: 58,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: AppTokens.cardBg,
+            borderRadius: BorderRadius.circular(AppTokens.rInput),
+            border: Border.all(
+              color: _nameError
+                  ? AppTokens.danger
+                  : (active ? AppTokens.brandStart : AppTokens.hairline),
+              width: active && !_nameError ? 1.5 : 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(
+                  alpha: AppTokens.isDark ? 0.2 : 0.04,
+                ),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
               ),
-              decoration: InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                hintText: "e.g. Netflix, gym membership, phone plan",
-                hintStyle: GoogleFonts.plusJakartaSans(
-                  color: AppTokens.textPlaceholder,
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w500,
+            ],
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 32,
+                height: 32,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  child: matched != null
+                      ? _iconForCatalog(matched, size: 30)
+                      : KeyedSubtree(
+                          key: const ValueKey('name-icon'),
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: AppTokens.brandStart.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            alignment: Alignment.center,
+                            child: flatIcon(
+                              'search_orange',
+                              color: AppTokens.brandStart,
+                              size: 18,
+                            ),
+                          ),
+                        ),
                 ),
               ),
-              onChanged: (_) {
-                if (_nameError) setState(() => _nameError = false);
-              },
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _nameCtrl,
+                  focusNode: _searchFocus,
+                  cursorColor: AppTokens.brandStart,
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppTokens.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    hintText: "e.g. Netflix, gym, Spotify, NBN",
+                    hintStyle: GoogleFonts.plusJakartaSans(
+                      color: AppTokens.textPlaceholder,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  onChanged: (_) {
+                    if (_nameError) setState(() => _nameError = false);
+                  },
+                ),
+              ),
+              if (matched != null)
+                TweenAnimationBuilder<double>(
+                  key: ValueKey(matched.id),
+                  tween: Tween(begin: 0, end: 1),
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.elasticOut,
+                  builder: (_, v, child) =>
+                      Transform.scale(scale: v, child: child),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: AppTokens.brandStart.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.check_circle_rounded,
+                      color: AppTokens.brandStart,
+                      size: 20,
+                    ),
+                  ),
+                )
+              else if (_nameCtrl.text.isNotEmpty)
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    _nameCtrl.clear();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.close_rounded,
+                      color: AppTokens.textFaint,
+                      size: 18,
+                    ),
+                  ),
+                ),
+            ],
           ),
-          if (matched != null)
-            TweenAnimationBuilder<double>(
-              key: ValueKey(matched.id),
-              tween: Tween(begin: 0, end: 1),
-              duration: const Duration(milliseconds: 350),
-              curve: Curves.elasticOut,
-              builder: (_, v, child) => Transform.scale(scale: v, child: child),
-              child: const Icon(
-                Icons.check_circle_rounded,
-                color: AppTokens.success,
-                size: 20,
-              ),
-            )
-          else if (_nameCtrl.text.isNotEmpty)
-            GestureDetector(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                _nameCtrl.clear();
-              },
-              child: const Icon(
-                Icons.close_rounded,
-                color: AppTokens.textFaint,
-                size: 18,
-              ),
-            ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1692,9 +2260,7 @@ class _AddAppScreenState extends State<AddAppScreen>
       );
     }
     return Column(
-      children: [
-        for (final e in _searchResults) _searchResultTile(e),
-      ],
+      children: [for (final e in _searchResults) _searchResultTile(e)],
     );
   }
 
@@ -1706,11 +2272,20 @@ class _AddAppScreenState extends State<AddAppScreen>
       onTap: () => _selectSearchResult(e),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: AppTokens.fieldBg,
+          color: AppTokens.cardBg,
           borderRadius: BorderRadius.circular(AppTokens.rInput),
           border: Border.all(color: AppTokens.hairline),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(
+                alpha: AppTokens.isDark ? 0.18 : 0.03,
+              ),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           children: [
@@ -1725,7 +2300,7 @@ class _AddAppScreenState extends State<AddAppScreen>
                     style: GoogleFonts.plusJakartaSans(
                       color: AppTokens.textPrimary,
                       fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                   Text(
@@ -1739,48 +2314,22 @@ class _AddAppScreenState extends State<AddAppScreen>
               ),
             ),
             if (priceMin != null)
-              Text(
-                'from \$${priceMin.toStringAsFixed(2)}',
-                style: GoogleFonts.spaceGrotesk(
-                  color: AppTokens.textMuted,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppTokens.brandStart.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'from \$${priceMin.toStringAsFixed(2)}',
+                  style: GoogleFonts.spaceGrotesk(
+                    color: AppTokens.brandStart,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
               ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _entryPointLink({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-        decoration: BoxDecoration(
-          color: AppTokens.gold.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(AppTokens.rSmallPill),
-          border: Border.all(color: AppTokens.gold.withValues(alpha: 0.25)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 13, color: AppTokens.gold),
-            const SizedBox(width: 5),
-            Text(
-              label,
-              style: GoogleFonts.plusJakartaSans(
-                color: AppTokens.gold,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
           ],
         ),
       ),
@@ -1791,14 +2340,17 @@ class _AddAppScreenState extends State<AddAppScreen>
     HapticFeedback.selectionClick();
     final result = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => const DiscoveryScreen(fromOnboarding: false)),
+      MaterialPageRoute(
+        builder: (_) => const DiscoveryScreen(fromOnboarding: false),
+      ),
     );
     if (result == true && mounted) Navigator.pop(context, true);
   }
 
-  // Empty-query state: suggested catalog entries + alternate entry points
+  // Empty-query state: compact suggested catalog entries
   Widget _suggestedStrip() {
     final quickEntries = _quickEntries;
+    if (quickEntries.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1808,80 +2360,79 @@ class _AddAppScreenState extends State<AddAppScreen>
           child: Row(
             children: [
               Text(
-                'SUGGESTED',
+                'POPULAR SERVICES',
                 style: GoogleFonts.plusJakartaSans(
                   color: AppTokens.textFaint,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.5,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.4,
                 ),
               ),
               const Spacer(),
-              Opacity(
-                opacity: _scanningBill ? 0.5 : 1,
-                child: _entryPointLink(
-                  icon: Icons.receipt_long_rounded,
-                  label: 'Scan a bill',
-                  onTap: _scanBill,
+              Text(
+                'Tap to pre-fill',
+                style: GoogleFonts.plusJakartaSans(
+                  color: AppTokens.textFaint,
+                  fontSize: 11,
                 ),
-              ),
-              const SizedBox(width: 8),
-              _entryPointLink(
-                icon: Icons.wifi_tethering_rounded,
-                label: 'Scan my phone',
-                onTap: _goScanPhone,
               ),
             ],
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         SizedBox(
-          height: 120,
+          height: 38,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(
               horizontal: AppTokens.padContent,
             ),
             itemCount: quickEntries.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 11),
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
             itemBuilder: (_, i) {
               final e = quickEntries[i];
-              final priceMin = e.pricingTiers.isNotEmpty
-                  ? e.pricingTiers.first.monthlyPrice
-                  : 0.0;
+              final isMatched = _matchedCatalog?.id == e.id;
               return GestureDetector(
                 onTap: () => _selectSearchResult(e),
-                child: Container(
-                  width: 92,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppTokens.fieldBg,
-                    borderRadius: BorderRadius.circular(AppTokens.rInput),
-                    border: Border.all(color: AppTokens.hairline),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  decoration: BoxDecoration(
+                    color: isMatched
+                        ? AppTokens.brandStart.withValues(alpha: 0.12)
+                        : AppTokens.cardBg,
+                    borderRadius: BorderRadius.circular(AppTokens.rPill),
+                    border: Border.all(
+                      color: isMatched
+                          ? AppTokens.brandStart
+                          : AppTokens.hairline,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(
+                          alpha: AppTokens.isDark ? 0.15 : 0.02,
+                        ),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      _iconForCatalog(e, size: 44),
-                      const Spacer(),
+                      _iconForCatalog(e, size: 22),
+                      const SizedBox(width: 8),
                       Text(
                         e.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.plusJakartaSans(
-                          color: AppTokens.textPrimary,
+                          color: isMatched
+                              ? AppTokens.brandStart
+                              : AppTokens.textPrimary,
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'from \$${priceMin.toStringAsFixed(2)}',
-                        style: GoogleFonts.spaceGrotesk(
-                          color: AppTokens.textMuted,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
                     ],
@@ -1899,7 +2450,7 @@ class _AddAppScreenState extends State<AddAppScreen>
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppTokens.padHeader,
-        vertical: 14,
+        vertical: 12,
       ),
       child: Row(
         children: [
@@ -1917,7 +2468,7 @@ class _AddAppScreenState extends State<AddAppScreen>
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.spaceGrotesk(
                   color: AppTokens.textStrong,
-                  fontSize: 22,
+                  fontSize: 20,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -1938,22 +2489,36 @@ class _AddAppScreenState extends State<AddAppScreen>
 
   Widget _iconBtn(IconData icon, {VoidCallback? onTap, bool danger = false}) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap?.call();
+      },
       child: Container(
-        width: 44,
-        height: 44,
+        width: 42,
+        height: 42,
         decoration: BoxDecoration(
-          color: AppTokens.fieldBg,
-          borderRadius: BorderRadius.circular(AppTokens.rIconBtn),
+          color: danger
+              ? AppTokens.danger.withValues(alpha: 0.10)
+              : AppTokens.cardBg,
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: danger
-                ? AppTokens.danger.withValues(alpha: 0.4)
+                ? AppTokens.danger.withValues(alpha: 0.3)
                 : AppTokens.hairline,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(
+                alpha: AppTokens.isDark ? 0.2 : 0.03,
+              ),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Icon(
           icon,
-          size: 20,
+          size: 19,
           color: danger ? AppTokens.danger : AppTokens.textPrimary,
         ),
       ),
@@ -1962,18 +2527,187 @@ class _AddAppScreenState extends State<AddAppScreen>
 
   Widget _saveBar(bool isEdit) {
     return Container(
-      padding: const EdgeInsets.all(AppTokens.padContent),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [AppTokens.screenBg.withValues(alpha: 0), AppTokens.screenBg],
-        ),
-        border: const Border(top: BorderSide(color: AppTokens.hairline)),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTokens.padContent,
+        vertical: 12,
       ),
-      child: PrimaryButton(
-        label: isEdit ? 'Save changes' : 'Save subscription',
-        onPressed: _save,
+      decoration: BoxDecoration(
+        color: AppTokens.cardBg,
+        border: Border(top: BorderSide(color: AppTokens.hairline)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(
+              alpha: AppTokens.isDark ? 0.25 : 0.05,
+            ),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: GestureDetector(
+        onTap: _save,
+        child: Container(
+          height: 52,
+          decoration: BoxDecoration(
+            gradient: AppTokens.brandGradient,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: AppTokens.brandStart.withValues(alpha: 0.35),
+                blurRadius: 14,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.check_rounded, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                isEdit ? 'Save Changes' : 'Save Subscription',
+                style: GoogleFonts.plusJakartaSans(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Section card ─────────────────────────────────────────────
+
+  Widget _sectionCard(
+    String title,
+    Widget child, {
+    bool promo = false,
+    Widget? icon,
+    Widget? trailing,
+  }) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppTokens.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: promo
+              ? AppTokens.warning.withValues(alpha: 0.35)
+              : AppTokens.hairline,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(
+              alpha: AppTokens.isDark ? 0.22 : 0.04,
+            ),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (icon != null) ...[
+                icon,
+                const SizedBox(width: 8),
+              ],
+              Text(
+                title,
+                style: GoogleFonts.plusJakartaSans(
+                  color: promo ? AppTokens.warning : AppTokens.textFaint,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              if (trailing != null) ...[
+                const Spacer(),
+                trailing,
+              ],
+            ],
+          ),
+          const SizedBox(height: 14),
+          child,
+        ],
+      ),
+    );
+  }
+
+  // The promo fields live in their own amber "cliff" block so the moment
+  // the discount stops reads as a distinct, time-pressure event — the thing
+  // this app exists to catch.
+  Widget _promoCliffBlock() {
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTokens.warning.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(AppTokens.rInput),
+        border: Border.all(color: AppTokens.warning.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              flatIcon(
+                'chart_trending_dark',
+                color: AppTokens.warning,
+                size: 14,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'PROMO CLIFF',
+                style: GoogleFonts.plusJakartaSans(
+                  color: AppTokens.warning,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _promoDateField(
+            label: 'Promo ends on',
+            helper: 'One-off — the date your discount stops',
+            date: _promoEnds,
+            icon: 'clock_dark',
+            unsure: _promoEndsUnsure,
+            onPicked: (d) => setState(() {
+              _promoEnds = d;
+              if (!_userTouchedDate) {
+                _renewal = defaultRenewalDate(_cycle, d);
+                _renewalError = false;
+              }
+            }),
+            onUnsureToggle: () => setState(() {
+              _promoEndsUnsure = !_promoEndsUnsure;
+              if (_promoEndsUnsure) _promoEnds = null;
+            }),
+          ),
+          const SizedBox(height: 16),
+          _priceField(
+            label: 'Price after promo',
+            controller: _regularCtrl,
+            allowUnsure: true,
+            unsure: _regularPriceUnsure,
+            onUnsureToggle: () => setState(() {
+              _regularPriceUnsure = !_regularPriceUnsure;
+              if (_regularPriceUnsure) _regularCtrl.clear();
+            }),
+          ),
+        ],
       ),
     );
   }
@@ -2004,155 +2738,229 @@ class _AddAppScreenState extends State<AddAppScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (isEdit) ...[
-                        Container(key: _nameKey, child: _labeled(
-                          'App Name',
-                          _textField(
-                            controller: _nameCtrl,
-                            hint: 'e.g. Netflix',
-                            error: _nameError,
-                            onChanged: (_) {
-                              if (_nameError) setState(() => _nameError = false);
-                            },
+                      _sectionCard(
+                        'SUBSCRIPTION DETAILS',
+                        icon: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: AppTokens.brandStart.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          helper: _nameError ? 'Name is required' : null,
-                          error: _nameError,
-                        )),
-                        const SizedBox(height: 16),
-                      ],
-                      _categoryField(),
-                      const SizedBox(height: 16),
-                      _switchRow(
-                        title: 'Paid subscription',
-                        subtitle: 'Track cost & renewals',
-                        value: _isSub,
-                        onChanged: (v) => setState(() => _isSub = v),
-                      ),
-                      AnimatedCrossFade(
-                        duration: const Duration(milliseconds: 260),
-                        sizeCurve: Curves.easeOutCubic,
-                        crossFadeState: _isSub
-                            ? CrossFadeState.showFirst
-                            : CrossFadeState.showSecond,
-                        firstChild: Column(
+                          alignment: Alignment.center,
+                          child: flatIcon(
+                            'tag_orange',
+                            color: AppTokens.brandStart,
+                            size: 14,
+                          ),
+                        ),
+                        Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const SizedBox(height: 16),
-                            _promoQuestionRow(),
-                            const SizedBox(height: 16),
-                            Container(
-                              key: _billingKey,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(
-                                  AppTokens.rInput,
+                            if (!isEdit && _matchedCatalog != null) ...[
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 16),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppTokens.fieldBg,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: AppTokens.brandStart
+                                        .withValues(alpha: 0.22),
+                                  ),
                                 ),
-                              ),
-                              child: AnimatedBuilder(
-                                animation: _highlightCtrl,
-                                builder: (_, child) {
-                                  final glow = _highlightCtrl.value * 0.12;
-                                  return Container(
-                                    decoration: BoxDecoration(
-                                      color: AppTokens.gold.withValues(
-                                        alpha: glow,
-                                      ),
-                                      borderRadius: BorderRadius.circular(
-                                        AppTokens.rInput + 4,
+                                child: Row(
+                                  children: [
+                                    _iconForCatalog(_matchedCatalog!, size: 40),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            _matchedCatalog!.name,
+                                            style: GoogleFonts.plusJakartaSans(
+                                              color: AppTokens.textPrimary,
+                                              fontSize: 14.5,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Auto-matched · ${_matchedCatalog!.category}',
+                                            style: GoogleFonts.plusJakartaSans(
+                                              color: AppTokens.textMuted,
+                                              fontSize: 11.5,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                    padding: const EdgeInsets.all(10),
-                                    child: child,
-                                  );
-                                },
-                                child: _costAndCycleRow(),
+                                    GestureDetector(
+                                      onTap: () {
+                                        HapticFeedback.selectionClick();
+                                        setState(() {
+                                          _nameCtrl.clear();
+                                          _matchedCatalog = null;
+                                        });
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: AppTokens.cardBg,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: AppTokens.hairline,
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          Icons.close_rounded,
+                                          color: AppTokens.textMuted,
+                                          size: 15,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
+                            ],
+                            if (isEdit) ...[
+                              Container(
+                                key: _nameKey,
+                                child: _labeled(
+                                  'App Name',
+                                  _textField(
+                                    controller: _nameCtrl,
+                                    hint: 'e.g. Netflix',
+                                    error: _nameError,
+                                    onChanged: (_) {
+                                      if (_nameError)
+                                        setState(() => _nameError = false);
+                                    },
+                                  ),
+                                  helper: _nameError
+                                      ? 'Name is required'
+                                      : null,
+                                  error: _nameError,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+                            _categoryField(),
                             if (widget.prefillServiceType != null) ...[
                               const SizedBox(height: 16),
                               _serviceTypePicker(),
                             ],
+                          ],
+                        ),
+                      ),
+                      _sectionCard(
+                        'PRICING & BILLING',
+                        icon: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: AppTokens.brandStart.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          alignment: Alignment.center,
+                          child: categoryIcon('Finance', size: 16),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _switchRow(
+                              title: 'Paid subscription',
+                              subtitle: 'Track cost & renewals',
+                              value: _isSub,
+                              onChanged: (v) => setState(() => _isSub = v),
+                            ),
                             AnimatedCrossFade(
                               duration: const Duration(milliseconds: 260),
                               sizeCurve: Curves.easeOutCubic,
-                              crossFadeState: _isPromo
+                              crossFadeState: _isSub
                                   ? CrossFadeState.showFirst
                                   : CrossFadeState.showSecond,
                               firstChild: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const SizedBox(height: 16),
-                                  _promoDateField(
-                                    label: 'Promo ends on',
-                                    helper: 'One-off — the date your discount stops',
-                                    date: _promoEnds,
-                                    icon: Icons.timer_off_rounded,
-                                    unsure: _promoEndsUnsure,
-                                    onPicked: (d) => setState(() {
-                                      _promoEnds = d;
-                                      if (!_userTouchedDate) {
-                                        _renewal = defaultRenewalDate(_cycle, d);
-                                        _renewalError = false;
-                                      }
-                                    }),
-                                    onUnsureToggle: () => setState(() {
-                                      _promoEndsUnsure = !_promoEndsUnsure;
-                                      if (_promoEndsUnsure) _promoEnds = null;
-                                    }),
+                                  const SizedBox(height: 14),
+                                  // Same-line Billing Cycle + Promo deal toggle
+                                  _cadenceAndPromoRow(),
+                                  const SizedBox(height: 14),
+                                  // Multi-column cost input & presets
+                                  Container(
+                                    key: _billingKey,
+                                    child: _priceField(
+                                      label: _isPromo ? 'Promo price' : 'Cost',
+                                      controller: _costCtrl,
+                                      tiers:
+                                          _matchedCatalog?.pricingTiers ??
+                                          const [],
+                                      allowUnsure: _isPromo,
+                                      unsure: _isPromo && _promoCostUnsure,
+                                      onUnsureToggle: () => setState(() {
+                                        _promoCostUnsure = !_promoCostUnsure;
+                                        if (_promoCostUnsure) _costCtrl.clear();
+                                      }),
+                                      error: _costError,
+                                      requiredHelper: 'Cost is required',
+                                      ocrFieldKey: 'cost',
+                                    ),
+                                  ),
+                                  AnimatedCrossFade(
+                                    duration: const Duration(milliseconds: 260),
+                                    sizeCurve: Curves.easeOutCubic,
+                                    crossFadeState: _isPromo
+                                        ? CrossFadeState.showFirst
+                                        : CrossFadeState.showSecond,
+                                    firstChild: _promoCliffBlock(),
+                                    secondChild: const SizedBox(
+                                      width: double.infinity,
+                                    ),
                                   ),
                                   const SizedBox(height: 16),
-                                  _priceField(
-                                    label: 'Price after promo',
-                                    controller: _regularCtrl,
-                                    allowUnsure: true,
-                                    unsure: _regularPriceUnsure,
-                                    onUnsureToggle: () => setState(() {
-                                      _regularPriceUnsure = !_regularPriceUnsure;
-                                      if (_regularPriceUnsure) _regularCtrl.clear();
-                                    }),
+                                  // Beautiful Date Selection Card + 1-Tap Presets
+                                  Container(
+                                    key: _renewalKey,
+                                    child: _labeled(
+                                      'Next renewal date',
+                                      _renewalDateSelector(),
+                                    ),
                                   ),
                                 ],
                               ),
-                              secondChild: const SizedBox(width: double.infinity),
-                            ),
-                            const SizedBox(height: 16),
-                            Container(key: _renewalKey, child: _labeled(
-                              'Next renewal date',
-                              _dateField(
-                                date: _renewal,
-                                placeholder: 'Select date',
-                                error: _renewalError,
-                                onTap: () => _pickDate(
-                                  current: _renewal,
-                                  onPicked: (d) => setState(() {
-                                    _renewal = d;
-                                    _userTouchedDate = true;
-                                    _renewalError = false;
-                                    _ocrFilledFields.remove('renewal');
-                                  }),
-                                ),
-                              ),
-                              helper: _renewalError
-                                  ? 'Renewal date is required'
-                                  : (_ocrFilledFields.contains('renewal')
-                                      ? 'Scanned — check this'
-                                      : (_isPromo ? 'Recurs every billing cycle' : null)),
-                              error: _renewalError,
-                            )),
-                            const SizedBox(height: 16),
-                            _labeled(
-                              'Notes',
-                              _textField(
-                                controller: _notesCtrl,
-                                hint: 'e.g. Family plan, shared with 3 people',
-                                minLines: 3,
-                                maxLines: 5,
+                              secondChild: const SizedBox(
+                                width: double.infinity,
                               ),
                             ),
                           ],
                         ),
-                        secondChild: const SizedBox(width: double.infinity),
                       ),
-                      const SizedBox(height: 24),
+                      _sectionCard(
+                        'OPTIONAL NOTES',
+                        icon: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: AppTokens.brandStart.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          alignment: Alignment.center,
+                          child: flatIcon(
+                            'edit_orange',
+                            color: AppTokens.brandStart,
+                            size: 14,
+                          ),
+                        ),
+                        _textField(
+                          controller: _notesCtrl,
+                          hint: 'e.g. Family plan, shared with 3 people',
+                          minLines: 3,
+                          maxLines: 5,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
                     ],
                   ),
                 ),
@@ -2182,17 +2990,19 @@ class _CategoryPickerSheet extends StatefulWidget {
 class _CategoryPickerSheetState extends State<_CategoryPickerSheet> {
   bool _adding = false, _saving = false;
   final _nameCtrl = TextEditingController();
-  Color _color = AppTokens.brandEnd;
+  // Orange is reserved for the app's single CTA color and green/yellow are
+  // reserved semantics — none are offered as a category swatch.
+  Color _color = const Color(0xFF6366F1);
   static const _swatches = [
-    AppTokens.brandEnd,
-    AppTokens.brandStart,
+    Color(0xFF6366F1),
+    Color(0xFFC026D3),
     Color(0xFFEC4899),
     Color(0xFF06B6D4),
-    Color(0xFFF59E0B),
-    Color(0xFF10B981),
+    Color(0xFF0284C7),
+    Color(0xFF5B21B6),
     Color(0xFFA855F7),
     Color(0xFF3B82F6),
-    Color(0xFFEAB308),
+    Color(0xFF701A75),
     Color(0xFF14B8A6),
   ];
 
@@ -2286,14 +3096,17 @@ class _CategoryPickerSheetState extends State<_CategoryPickerSheet> {
                           ),
                           child: Row(
                             children: [
-                              Container(
-                                width: 10,
-                                height: 10,
-                                decoration: BoxDecoration(
-                                  color: c.color,
-                                  shape: BoxShape.circle,
+                              if (AppTokens.categories.containsKey(c.name))
+                                categoryIcon(c.name, size: 20)
+                              else
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    color: c.color,
+                                    shape: BoxShape.circle,
+                                  ),
                                 ),
-                              ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
@@ -2306,7 +3119,7 @@ class _CategoryPickerSheetState extends State<_CategoryPickerSheet> {
                                 ),
                               ),
                               if (sel)
-                                const Icon(
+                                Icon(
                                   Icons.check_rounded,
                                   color: AppTokens.brandEnd,
                                   size: 18,
@@ -2329,8 +3142,8 @@ class _CategoryPickerSheetState extends State<_CategoryPickerSheet> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(
-                        Icons.add_circle_outline_rounded,
+                      flatIcon(
+                        'add_circle_outline_dark',
                         color: AppTokens.brandEnd,
                         size: 20,
                       ),
@@ -2413,7 +3226,7 @@ class _CategoryPickerSheetState extends State<_CategoryPickerSheet> {
                           : () => setState(() => _adding = false),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppTokens.textMuted,
-                        side: const BorderSide(color: AppTokens.hairline),
+                        side: BorderSide(color: AppTokens.hairline),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(AppTokens.rInput),
                         ),
@@ -2448,6 +3261,492 @@ class _CategoryPickerSheetState extends State<_CategoryPickerSheet> {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Beautiful Custom In-App Date Picker Bottom Sheet
+// ─────────────────────────────────────────────────────────────
+
+class _CustomDatePickerSheet extends StatefulWidget {
+  final DateTime initialDate;
+  final ValueChanged<DateTime> onDateSelected;
+
+  const _CustomDatePickerSheet({
+    required this.initialDate,
+    required this.onDateSelected,
+  });
+
+  @override
+  State<_CustomDatePickerSheet> createState() => _CustomDatePickerSheetState();
+}
+
+class _CustomDatePickerSheetState extends State<_CustomDatePickerSheet> {
+  late DateTime _selectedDate;
+  late DateTime _displayedMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = DateTime(
+      widget.initialDate.year,
+      widget.initialDate.month,
+      widget.initialDate.day,
+    );
+    _displayedMonth = DateTime(_selectedDate.year, _selectedDate.month, 1);
+  }
+
+  void _prevMonth() {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _displayedMonth = DateTime(
+        _displayedMonth.year,
+        _displayedMonth.month - 1,
+        1,
+      );
+    });
+  }
+
+  void _nextMonth() {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _displayedMonth = DateTime(
+        _displayedMonth.year,
+        _displayedMonth.month + 1,
+        1,
+      );
+    });
+  }
+
+  void _selectPreset(DateTime date) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _selectedDate = DateTime(date.year, date.month, date.day);
+      _displayedMonth = DateTime(date.year, date.month, 1);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final daysInMonth = DateTime(
+      _displayedMonth.year,
+      _displayedMonth.month + 1,
+      0,
+    ).day;
+    final firstWeekday = _displayedMonth.weekday; // Monday = 1, Sunday = 7
+    final daysBefore = firstWeekday - 1;
+
+    final daysInPrevMonth = DateTime(
+      _displayedMonth.year,
+      _displayedMonth.month,
+      0,
+    ).day;
+
+    return Container(
+      padding: const EdgeInsets.only(top: 12, bottom: 28),
+      decoration: BoxDecoration(
+        color: AppTokens.cardBg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 24,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Handle Bar
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppTokens.hairline,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Header Row
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: AppTokens.brandStart.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: flatIcon(
+                      'calendar_orange',
+                      color: AppTokens.brandStart,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Select Renewal Date',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppTokens.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          DateFormat('EEEE, d MMMM yyyy').format(_selectedDate),
+                          style: GoogleFonts.spaceGrotesk(
+                            color: AppTokens.brandStart,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppTokens.fieldBg,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppTokens.hairline),
+                      ),
+                      child: Icon(
+                        Icons.close_rounded,
+                        color: AppTokens.textMuted,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Month Navigator Bar
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppTokens.fieldBg,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppTokens.hairline),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.chevron_left_rounded, size: 22),
+                      color: AppTokens.textPrimary,
+                      splashRadius: 18,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      onPressed: _prevMonth,
+                    ),
+                    Text(
+                      DateFormat('MMMM yyyy').format(_displayedMonth),
+                      style: GoogleFonts.spaceGrotesk(
+                        color: AppTokens.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_right_rounded, size: 22),
+                      color: AppTokens.textPrimary,
+                      splashRadius: 18,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      onPressed: _nextMonth,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Weekday Row (Mon - Sun)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  'MON',
+                  'TUE',
+                  'WED',
+                  'THU',
+                  'FRI',
+                  'SAT',
+                  'SUN',
+                ].map((day) {
+                  return Expanded(
+                    child: Center(
+                      child: Text(
+                        day,
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTokens.textFaint,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 6),
+
+            // Calendar Grid
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: 42,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 7,
+                  mainAxisSpacing: 4,
+                  crossAxisSpacing: 4,
+                  childAspectRatio: 1.15,
+                ),
+                itemBuilder: (_, index) {
+                  int dayNumber;
+                  bool isCurrentMonth = true;
+                  DateTime cellDate;
+
+                  if (index < daysBefore) {
+                    isCurrentMonth = false;
+                    dayNumber = daysInPrevMonth - (daysBefore - 1 - index);
+                    cellDate = DateTime(
+                      _displayedMonth.year,
+                      _displayedMonth.month - 1,
+                      dayNumber,
+                    );
+                  } else if (index >= daysBefore + daysInMonth) {
+                    isCurrentMonth = false;
+                    dayNumber = index - (daysBefore + daysInMonth) + 1;
+                    cellDate = DateTime(
+                      _displayedMonth.year,
+                      _displayedMonth.month + 1,
+                      dayNumber,
+                    );
+                  } else {
+                    dayNumber = index - daysBefore + 1;
+                    cellDate = DateTime(
+                      _displayedMonth.year,
+                      _displayedMonth.month,
+                      dayNumber,
+                    );
+                  }
+
+                  final isSelected = _selectedDate.year == cellDate.year &&
+                      _selectedDate.month == cellDate.month &&
+                      _selectedDate.day == cellDate.day;
+
+                  final isToday = today.year == cellDate.year &&
+                      today.month == cellDate.month &&
+                      today.day == cellDate.day;
+
+                  return GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        _selectedDate = cellDate;
+                        if (!isCurrentMonth) {
+                          _displayedMonth = DateTime(
+                            cellDate.year,
+                            cellDate.month,
+                            1,
+                          );
+                        }
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      decoration: BoxDecoration(
+                        gradient: isSelected ? AppTokens.brandGradient : null,
+                        color: isSelected
+                            ? null
+                            : (isToday
+                                ? AppTokens.brandStart.withValues(alpha: 0.10)
+                                : Colors.transparent),
+                        borderRadius: BorderRadius.circular(10),
+                        border: isToday && !isSelected
+                            ? Border.all(
+                                color: AppTokens.brandStart
+                                    .withValues(alpha: 0.5),
+                              )
+                            : null,
+                        boxShadow: isSelected
+                            ? [
+                                BoxShadow(
+                                  color: AppTokens.brandStart
+                                      .withValues(alpha: 0.35),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '$dayNumber',
+                        style: GoogleFonts.spaceGrotesk(
+                          color: isSelected
+                              ? Colors.white
+                              : (isCurrentMonth
+                                  ? AppTokens.textPrimary
+                                  : AppTokens.textFaint.withValues(alpha: 0.5)),
+                          fontSize: 13.5,
+                          fontWeight: isSelected || isToday
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Quick 1-Tap Presets
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  _presetPill('Today', today),
+                  const SizedBox(width: 6),
+                  _presetPill(
+                    'In 7 Days',
+                    today.add(const Duration(days: 7)),
+                  ),
+                  const SizedBox(width: 6),
+                  _presetPill(
+                    '+1 Month',
+                    DateTime(today.year, today.month + 1, today.day),
+                  ),
+                  const SizedBox(width: 6),
+                  _presetPill(
+                    '+1 Year',
+                    DateTime(today.year + 1, today.month, today.day),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+
+            // Confirm Button
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: GestureDetector(
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  widget.onDateSelected(_selectedDate);
+                  Navigator.pop(context);
+                },
+                child: Container(
+                  height: 50,
+                  decoration: BoxDecoration(
+                    gradient: AppTokens.brandGradient,
+                    borderRadius: BorderRadius.circular(AppTokens.rInput),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTokens.brandStart.withValues(alpha: 0.35),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.check_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Set Renewal Date',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _presetPill(String label, DateTime targetDate) {
+    final isSelected = _selectedDate.year == targetDate.year &&
+        _selectedDate.month == targetDate.month &&
+        _selectedDate.day == targetDate.day;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _selectPreset(targetDate),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          height: 32,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppTokens.brandStart.withValues(alpha: 0.14)
+                : AppTokens.fieldBg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected
+                  ? AppTokens.brandStart
+                  : AppTokens.hairline,
+            ),
+          ),
+          child: Text(
+            label,
+            style: GoogleFonts.plusJakartaSans(
+              color: isSelected
+                  ? AppTokens.brandStart
+                  : AppTokens.textMuted,
+              fontSize: 11,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+            ),
+          ),
         ),
       ),
     );

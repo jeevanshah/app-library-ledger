@@ -75,7 +75,32 @@
       "Bash(curl -s https://jrsdigital.net/priceminder/privacy.html --max-time 10)",
       "Bash(python3 -c \"\")",
       "Bash(awk '/^\\\\*\\\\*Ever switch/,0' \"C:/Users/Deep/AppData/Local/Temp/claude/c--Users-Deep-Desktop-mobile-app/18285017-362c-465e-95c8-c793fbcd156c/scratchpad/store_listing.md\")",
-      "Bash(\"/c/Program Files/ShareX/ffmpeg.exe\" -i \"android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png\")"
+      "Bash(\"/c/Program Files/ShareX/ffmpeg.exe\" -i \"android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png\")",
+      "Bash(flutter analyze *)",
+      "Bash(grep -rn \"HugeIcon\\(\" \"C:\\\\Users\\\\Deep/AppData/Local/Pub/Cache/hosted/pub.dev/hugeicons-1.1.5/example/lib\" 2>/dev/null | head -5 *)",
+      "Read(//c/Users/Deep/AppData/Local/Pub/Cache/hosted/pub.dev/hugeicons-1.1.5/example/lib/**)",
+      "Read(//c/Users/Deep/AppData/Local/Pub/Cache/hosted/pub.dev/hugeicons-1.1.5/lib/**)",
+      "Bash(xargs grep -l \"class HugeIcon\")",
+      "Bash(find \"C:\\\\Users\\\\Deep/AppData/Local/Pub/Cache/hosted/pub.dev/hugeicons-1.1.5\" -iname \"*.dart\" -not -path \"*/example/*\" -not -path \"*/test/*\")",
+      "Read(//c/Users/Deep/AppData/Local/Pub/Cache/hosted/pub.dev/hugeicons-1.1.5/**)",
+      "Bash(FILE=\"C:\\\\Users\\\\Deep/AppData/Local/Pub/Cache/hosted/pub.dev/hugeicons-1.1.5/lib/hugeicons.dart\" *)",
+      "PowerShell($f = Get-Command flutter -ErrorAction SilentlyContinue; if \\($f\\) { $f.Source } else { \"not found in PATH\" })",
+      "Bash(\"/c/flutter/bin/flutter.bat\" emulators *)",
+      "Bash(\"/c/flutter/bin/flutter.bat\" devices *)",
+      "Bash(\"/c/flutter/bin/flutter.bat\" run *)",
+      "Bash('C:\\\\Users\\\\Deep\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe' devices *)",
+      "Bash('C:\\\\Users\\\\Deep\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe' shell *)",
+      "Bash('C:\\\\Users\\\\Deep\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe' pull *)",
+      "Bash(\"C:\\\\Users\\\\Deep\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" devices *)",
+      "Bash(python3 -c \"from PIL import Image; print\\('PIL available'\\)\")",
+      "Bash(python -c \"from PIL import Image; print\\('PIL available'\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import scipy; print\\(scipy.__version__\\)\")",
+      "Bash(python -c \"from scipy import ndimage; print\\('ndimage ok'\\)\")",
+      "Bash(python3)",
+      "Bash(python)",
+      "Bash(cp \"c:/Users/Deep/Desktop/mobile-app/docs/store-assets/icons/flat/\"*.png \"c:/Users/Deep/Desktop/mobile-app/app_library_ledger/assets/images/icons/flat/\")",
+      "Bash(cp \"c:/Users/Deep/Desktop/mobile-app/docs/store-assets/icons/illustrations/\"*.png \"c:/Users/Deep/Desktop/mobile-app/app_library_ledger/assets/images/icons/illustrations/\")"
     ]
   }
 }

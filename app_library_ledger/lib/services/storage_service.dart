@@ -184,18 +184,22 @@ class StorageService {
     }
   }
 
+  // Kept in sync with AppTokens.categories — same names, same hex, so the
+  // seeded default and the token-driven lookup never disagree. None of
+  // these use green/yellow/orange/red: those are reserved for savings,
+  // time-pressure, CTA, and error semantics respectively.
   List<Category> _defaultCategories() {
     return [
-      Category(name: 'Productivity', color: const Color(0xFF4CAF50)),
-      Category(name: 'Notes / Journaling', color: const Color(0xFF2196F3)),
-      Category(name: 'Finance', color: const Color(0xFFFFC107)),
-      Category(name: 'Health / Fitness', color: const Color(0xFFF44336)),
-      Category(name: 'Media / Streaming', color: const Color(0xFF9C27B0)),
-      Category(name: 'Utilities', color: const Color(0xFF00BCD4)),
-      Category(name: 'Social', color: const Color(0xFFE91E63)),
-      Category(name: 'Education', color: const Color(0xFF673AB7)),
-      Category(name: 'Shopping', color: const Color(0xFFFF5722)),
-      Category(name: 'Travel', color: const Color(0xFF03A9F4)),
+      Category(name: 'Productivity', color: const Color(0xFF6366F1)),
+      Category(name: 'Notes / Journaling', color: const Color(0xFFA855F7)),
+      Category(name: 'Finance', color: const Color(0xFF5B21B6)),
+      Category(name: 'Health / Fitness', color: const Color(0xFF0284C7)),
+      Category(name: 'Media / Streaming', color: const Color(0xFFEC4899)),
+      Category(name: 'Utilities', color: const Color(0xFF06B6D4)),
+      Category(name: 'Social', color: const Color(0xFF3B82F6)),
+      Category(name: 'Education', color: const Color(0xFF701A75)),
+      Category(name: 'Shopping', color: const Color(0xFFC026D3)),
+      Category(name: 'Travel', color: const Color(0xFF14B8A6)),
     ];
   }
 }

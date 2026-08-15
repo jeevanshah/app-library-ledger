@@ -5,6 +5,7 @@ import '../services/settings_service.dart';
 import '../services/notification_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_tokens.dart';
+import '../theme/app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -41,8 +42,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       initialTime: TimeOfDay(hour: _s.hour, minute: _s.minute),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.dark(primary: AppTokens.brandEnd),
-          dialogTheme: const DialogThemeData(backgroundColor: AppTokens.cardBg),
+          colorScheme: ColorScheme.light(primary: AppTokens.brandEnd),
+          dialogTheme: DialogThemeData(backgroundColor: AppTokens.cardBg),
         ),
         child: child!,
       ),
@@ -186,8 +187,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       backgroundColor: AppTokens.screenBg,
       body: SafeArea(
         child: _loading
-            ? const Center(
-                child: CircularProgressIndicator(color: AppTokens.gold),
+            ? Center(
+                child: CircularProgressIndicator(color: AppTokens.brandStart),
               )
             : ListView(
                 padding: const EdgeInsets.symmetric(
@@ -210,6 +211,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   // Master toggle
                   _row(
                     'Notifications',
+                    leadingIcon: 'bell_dark',
                     trailing: Switch(
                       value: _s.enabled,
                       activeColor: AppTokens.brandEnd,
@@ -249,14 +251,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   ),
                                   decoration: BoxDecoration(
                                     color: _s.offsets.contains(d)
-                                        ? AppTokens.gold.withValues(alpha: 0.12)
+                                        ? AppTokens.brandStart.withValues(alpha: 0.12)
                                         : AppTokens.fieldBg,
                                     borderRadius: BorderRadius.circular(
                                       AppTokens.rPill,
                                     ),
                                     border: Border.all(
                                       color: _s.offsets.contains(d)
-                                          ? AppTokens.gold.withValues(
+                                          ? AppTokens.brandStart.withValues(
                                               alpha: 0.3,
                                             )
                                           : AppTokens.hairline,
@@ -266,7 +268,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     '$d day${d == 1 ? '' : 's'} before',
                                     style: GoogleFonts.plusJakartaSans(
                                       color: _s.offsets.contains(d)
-                                          ? AppTokens.gold
+                                          ? AppTokens.brandStart
                                           : AppTokens.textMuted,
                                       fontSize: 12.5,
                                       fontWeight: FontWeight.w600,
@@ -343,6 +345,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     valueListenable: SettingsService().offersEnabled,
                     builder: (_, enabled, __) => _row(
                       'Savings offers',
+                      leadingIcon: 'tag_dark',
                       trailing: Switch(
                         value: enabled,
                         activeColor: AppTokens.brandEnd,
@@ -358,6 +361,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         color: AppTokens.textMuted,
                         fontSize: 11,
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: AppTokens.gapSection),
+
+                  // Appearance
+                  _sectionLabel('APPEARANCE'),
+                  const SizedBox(height: AppTokens.gapItem),
+                  ValueListenableBuilder<ThemeMode>(
+                    valueListenable: AppTheme.themeModeNotifier,
+                    builder: (_, mode, __) => Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final option in const [
+                          (ThemeMode.light, 'Light'),
+                          (ThemeMode.dark, 'Dark'),
+                          (ThemeMode.system, 'System'),
+                        ])
+                          GestureDetector(
+                            onTap: () => AppTheme.setThemeMode(option.$1),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: mode == option.$1
+                                    ? AppTokens.brandStart.withValues(alpha: 0.12)
+                                    : AppTokens.fieldBg,
+                                borderRadius: BorderRadius.circular(
+                                  AppTokens.rPill,
+                                ),
+                                border: Border.all(
+                                  color: mode == option.$1
+                                      ? AppTokens.brandStart.withValues(
+                                          alpha: 0.3,
+                                        )
+                                      : AppTokens.hairline,
+                                ),
+                              ),
+                              child: Text(
+                                option.$2,
+                                style: GoogleFonts.plusJakartaSans(
+                                  color: mode == option.$1
+                                      ? AppTokens.brandStart
+                                      : AppTokens.textPrimary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: AppTokens.gapSection),
@@ -388,8 +444,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   _row(
                     'Privacy',
+                    leadingIcon: 'shield_lock_dark',
                     onTap: _showPrivacySheet,
-                    trailing: const Icon(
+                    trailing: Icon(
                       Icons.chevron_right_rounded,
                       color: AppTokens.textFaint,
                       size: 18,
@@ -428,16 +485,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ),
   );
 
-  Widget _row(String label, {Widget? trailing, VoidCallback? onTap}) {
+  Widget _row(String label, {Widget? trailing, VoidCallback? onTap, String? leadingIcon}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           border: Border(bottom: BorderSide(color: AppTokens.hairline)),
         ),
         child: Row(
           children: [
+            if (leadingIcon != null) ...[
+              flatIcon(leadingIcon, color: AppTokens.brandStart, size: 18),
+              const SizedBox(width: 10),
+            ],
             Expanded(
               child: Text(
                 label,

@@ -35,6 +35,9 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/images/icons/flat/
+    - assets/images/icons/illustrations/
+    - assets/images/icons/categories/
     - assets/catalog.json
     - assets/service_icons/
     - assets/offers_sample.json

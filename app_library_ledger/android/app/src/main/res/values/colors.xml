@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- PriceMinder dark editorial background — must match AppTokens.screenBg -->
-    <color name="launch_background_color">#0B0B11</color>
+    <!-- Must match AppTokens' light-mode screenBg (light is the default
+         theme; see values-night/colors.xml for the dark-mode override) -->
+    <color name="launch_background_color">#FFFFFF</color>
 	<color name="ic_launcher_background">#FDFDFB</color>
 </resources>

@@ -16,6 +16,8 @@ final _moneyFmt = NumberFormat.currency(
 
 /// The 12 swatches offered in both the standalone color picker and the
 /// New Category dialog (spec: COLOR PICKER DIALOG).
+// Green/amber/red are reserved for savings, time-pressure, and error
+// semantics respectively — never offered as a category swatch.
 const List<Color> _swatchColors = [
   Color(0xFF6366F1),
   Color(0xFF8B5CF6),
@@ -23,11 +25,11 @@ const List<Color> _swatchColors = [
   Color(0xFFF472B6),
   Color(0xFF06B6D4),
   Color(0xFF22D3EE),
-  Color(0xFF10B981),
-  Color(0xFF34D399),
-  Color(0xFFF59E0B),
-  Color(0xFFFBBF24),
-  Color(0xFFEF4444),
+  Color(0xFFC026D3),
+  Color(0xFFE879F9),
+  Color(0xFF0284C7),
+  Color(0xFF7DD3FC),
+  Color(0xFF5B21B6),
   Color(0xFF3B82F6),
 ];
 
@@ -203,9 +205,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
               _IconTile(
                 onTap: _addCategory,
                 gradient: AppTokens.brandGradient,
-                child: const Icon(
+                child: Icon(
                   Icons.add_rounded,
-                  color: Colors.white,
+                  color: AppTokens.screenBg,
                   size: 22,
                 ),
               ),
@@ -315,11 +317,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
               shape: BoxShape.circle,
               border: Border.all(color: AppTokens.hairline, width: 1),
             ),
-            child: const Icon(
-              Icons.category_rounded,
-              size: 32,
-              color: AppTokens.textFaint,
-            ),
+            child: flatIcon('grid_dark', size: 32, color: AppTokens.brandStart),
           ),
           const SizedBox(height: 16),
           Text(
@@ -467,7 +465,7 @@ class _CategoryRow extends StatelessWidget {
               onPointerDown: (_) => HapticFeedback.selectionClick(),
               child: ReorderableDragStartListener(
                 index: index,
-                child: const Icon(
+                child: Icon(
                   Icons.drag_indicator_rounded,
                   color: AppTokens.textFaint,
                   size: 22,
@@ -550,9 +548,9 @@ class _CategoryRow extends StatelessWidget {
               color: AppTokens.cardBg,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
-                side: const BorderSide(color: AppTokens.hairlineStrong),
+                side: BorderSide(color: AppTokens.hairlineStrong),
               ),
-              icon: const Icon(
+              icon: Icon(
                 Icons.more_vert_rounded,
                 color: AppTokens.textMuted,
               ),
@@ -1000,7 +998,7 @@ class _GradientButton extends StatelessWidget {
           child: Text(
             label,
             style: GoogleFonts.plusJakartaSans(
-              color: Colors.white,
+              color: AppTokens.screenBg,
               fontSize: 14.5,
               fontWeight: FontWeight.w700,
             ),

@@ -20,6 +20,9 @@ import '../services/subscription_scanner.dart';
 import '../services/offers_service.dart';
 import '../services/offers_matcher.dart';
 import '../theme/app_tokens.dart';
+import '../widgets/hero_empty_state.dart';
+import '../widgets/pressable_scale.dart';
+import '../widgets/pulse.dart';
 import 'add_app_screen.dart';
 import 'calendar_screen.dart';
 import 'discovery_screen.dart';
@@ -150,7 +153,9 @@ class _LibraryScreenState extends State<LibraryScreen>
       // I4: Installed package scan
       final catalog = CatalogService();
       await catalog.loadCatalog();
-      final scanPkgs = catalog.appScanEntries.map((e) => e.packageName!).toList();
+      final scanPkgs = catalog.appScanEntries
+          .map((e) => e.packageName!)
+          .toList();
       if (scanPkgs.isNotEmpty) {
         try {
           final installed = await packageScannerChannel
@@ -170,7 +175,8 @@ class _LibraryScreenState extends State<LibraryScreen>
           _dismissedInsights = decoded.map((k, v) => MapEntry(k, v as int));
           _dismissedInsights.removeWhere(
             (k, v) =>
-                (DateTime.now().millisecondsSinceEpoch - v) > (30 * 86400 * 1000),
+                (DateTime.now().millisecondsSinceEpoch - v) >
+                (30 * 86400 * 1000),
           );
         }
         final prRaw = prefs.getString('promo_resolve_dismissed');
@@ -238,7 +244,9 @@ class _LibraryScreenState extends State<LibraryScreen>
   Future<void> _goScan() async {
     final ok = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => const DiscoveryScreen(fromOnboarding: false)),
+      MaterialPageRoute(
+        builder: (_) => const DiscoveryScreen(fromOnboarding: false),
+      ),
     );
     if (ok == true) _refresh();
   }
@@ -254,84 +262,15 @@ class _LibraryScreenState extends State<LibraryScreen>
   }
 
   Widget _emptyLibraryState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppTokens.padContent),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.receipt_long_rounded,
-              size: 40,
-              color: AppTokens.textFaint.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Nothing tracked yet',
-              style: GoogleFonts.playfairDisplay(
-                color: AppTokens.textStrong,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Add your first subscription to start tracking costs and renewals.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.plusJakartaSans(
-                color: AppTokens.textMuted,
-                fontSize: 13,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: AppTokens.goldGradient,
-                  borderRadius: BorderRadius.circular(AppTokens.rInput),
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(AppTokens.rInput),
-                    onTap: _goAdd,
-                    child: Center(
-                      child: Text(
-                        '+ Add your first subscription',
-                        style: GoogleFonts.plusJakartaSans(
-                          color: AppTokens.screenBg,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: _goScan,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  'Scan my phone instead',
-                  style: GoogleFonts.plusJakartaSans(
-                    color: AppTokens.textMuted,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    decoration: TextDecoration.underline,
-                    decorationColor: AppTokens.textMuted,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return HeroEmptyState(
+      illustration: 'subscription_list_toggles',
+      title: 'Nothing tracked yet',
+      subtitle:
+          'Add your first subscription to start tracking costs and renewals.',
+      ctaLabel: '+ Add your first subscription',
+      onCta: _goAdd,
+      linkLabel: 'Scan my phone instead',
+      onLink: _goScan,
     );
   }
 
@@ -498,19 +437,22 @@ class _LibraryScreenState extends State<LibraryScreen>
       lastDate: DateTime(2099),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.dark(
+          colorScheme: ColorScheme.light(
             primary: AppTokens.brandEnd,
             onPrimary: Colors.white,
             surface: AppTokens.cardBg,
             onSurface: AppTokens.textPrimary,
           ),
-          dialogTheme: const DialogThemeData(backgroundColor: AppTokens.cardBg),
+          dialogTheme: DialogThemeData(backgroundColor: AppTokens.cardBg),
         ),
         child: child!,
       ),
     );
     if (picked == null || !mounted) return;
-    final updated = a.copyWith(isPromotionalPrice: true, promotionEndsDate: picked);
+    final updated = a.copyWith(
+      isPromotionalPrice: true,
+      promotionEndsDate: picked,
+    );
     await StorageService().saveApp(updated);
     await NotificationService().schedulePromoReminder(updated);
     _refresh();
@@ -564,8 +506,15 @@ class _LibraryScreenState extends State<LibraryScreen>
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
     final monthly = _analytics.getTotalMonthlyCost(_apps);
     final active = _analytics.getActiveSubscriptionCount(_apps);
+    final promoSavings = _analytics.getActivePromoSavings(_apps);
+    final renewSoonCount = _apps.where((a) {
+      if (!a.isActiveSubscription || a.nextRenewalDate == null) return false;
+      final diff = a.nextRenewalDate!.difference(now).inDays;
+      return diff >= 0 && diff <= 7;
+    }).length;
     final filtered = _filtered;
     final counts = _counts;
     final expiredPromos = _analytics
@@ -576,8 +525,8 @@ class _LibraryScreenState extends State<LibraryScreen>
     return Scaffold(
       backgroundColor: AppTokens.screenBg,
       body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppTokens.gold),
+          ? Center(
+              child: CircularProgressIndicator(color: AppTokens.brandStart),
             )
           : SafeArea(
               child: IndexedStack(
@@ -629,10 +578,22 @@ class _LibraryScreenState extends State<LibraryScreen>
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: AppTokens.gold.withValues(alpha: 0.1),
+                                color: AppTokens.cardBg,
                                 borderRadius: BorderRadius.circular(
                                   AppTokens.rSmallPill,
                                 ),
+                                border: Border.all(
+                                  color: AppTokens.brandStart.withValues(
+                                    alpha: 0.25,
+                                  ),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.08),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -640,8 +601,8 @@ class _LibraryScreenState extends State<LibraryScreen>
                                   Container(
                                     width: 4,
                                     height: 4,
-                                    decoration: const BoxDecoration(
-                                      color: AppTokens.gold,
+                                    decoration: BoxDecoration(
+                                      color: AppTokens.brandStart,
                                       shape: BoxShape.circle,
                                     ),
                                   ),
@@ -649,7 +610,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                                   Text(
                                     'DEVICE LOCAL',
                                     style: GoogleFonts.plusJakartaSans(
-                                      color: AppTokens.gold,
+                                      color: AppTokens.brandStart,
                                       fontSize: 9,
                                       fontWeight: FontWeight.w700,
                                       letterSpacing: 1.2,
@@ -669,133 +630,371 @@ class _LibraryScreenState extends State<LibraryScreen>
                                 ? _scrollCtrl.offset.clamp(0.0, double.infinity)
                                 : 0.0;
                             final t = (offset / 96.0).clamp(0.0, 1.0);
-                            final height = lerpDouble(156.0, 44.0, t)!;
-                            final vertPad = lerpDouble(28.0, 10.0, t)!;
-                            final horizPad = lerpDouble(22.0, 22.0, t)!;
-                            final labelFont = lerpDouble(12.0, 11.0, t)!;
-                            final amountFont = lerpDouble(52.0, 18.0, t)!;
-                            final pillOpacity = (1.0 - t * 2.0).clamp(0.0, 1.0);
+                            final height = lerpDouble(174.0, 52.0, t)!;
+                            final expandedOpacity = (1.0 - t * 2.5).clamp(0.0, 1.0);
+                            final collapsedOpacity = ((t - 0.4) * 2.5).clamp(0.0, 1.0);
+
                             return Padding(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 22,
-                                vertical: 14,
+                                horizontal: 18,
+                                vertical: 10,
                               ),
-                              child: GestureDetector(
-                                onTap: () => setState(() => _tab = 1),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 100),
-                                  decoration: BoxDecoration(
-                                    color: AppTokens.cardBg,
-                                    borderRadius: BorderRadius.circular(
-                                      t < 0.5 ? 20.0 : 12.0,
-                                    ),
-                                    border: Border.all(
-                                      color: AppTokens.hairline,
-                                    ),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 100),
+                                height: height,
+                                clipBehavior: Clip.hardEdge,
+                                decoration: BoxDecoration(
+                                  color: AppTokens.cardBg,
+                                  borderRadius: BorderRadius.circular(
+                                    t < 0.5 ? 20 : 14,
                                   ),
-                                  height: height,
-                                  clipBehavior: Clip.antiAlias,
-                                  padding: EdgeInsets.symmetric(
-                                    vertical: vertPad,
-                                    horizontal: horizPad,
+                                  border: Border.all(
+                                    color: AppTokens.hairline,
                                   ),
-                                  child: Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.center,
-                                    children: [
-                                      if (t < 0.5)
-                                        Text(
-                                          'Monthly spend',
-                                          style: GoogleFonts.plusJakartaSans(
-                                            color: AppTokens.textMuted,
-                                            fontSize: labelFont,
-                                            fontWeight: FontWeight.w500,
-                                            letterSpacing: 1,
-                                          ),
-                                        )
-                                      else
-                                        Text(
-                                          'Monthly spend',
-                                          style: GoogleFonts.plusJakartaSans(
-                                            color: AppTokens.textMuted,
-                                            fontSize: labelFont,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      Flexible(
-                                        child: AnimatedBuilder(
-                                          animation: _counterAnim,
-                                          builder: (_, __) => ShaderMask(
-                                            shaderCallback: (bounds) =>
-                                                LinearGradient(
-                                                  colors: [
-                                                    AppTokens.gold,
-                                                    AppTokens.goldLight,
-                                                  ],
-                                                ).createShader(bounds),
-                                            child: FittedBox(
-                                              fit: BoxFit.scaleDown,
-                                              alignment: Alignment.centerRight,
-                                              child: Text(
-                                                _fmt.format(
-                                                  monthly * _counterAnim.value,
-                                                ),
-                                                maxLines: 1,
-                                                style: GoogleFonts.playfairDisplay(
-                                                  color: AppTokens.gold,
-                                                  fontSize: amountFont,
-                                                  fontWeight: FontWeight.w700,
-                                                  height: t < 0.5 ? 1.0 : 1.2,
-                                                  letterSpacing: t < 0.5
-                                                      ? -1.5
-                                                      : -0.5,
-                                                  fontFeatures: const [
-                                                    FontFeature.tabularFigures(),
-                                                  ],
-                                                ),
-                                              ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: AppTokens.isDark ? 0.28 : 0.05,
+                                      ),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Stack(
+                                  clipBehavior: Clip.hardEdge,
+                                  children: [
+                                    // ── Expanded Full Hero Card ──
+                                    if (expandedOpacity > 0)
+                                      Positioned(
+                                        top: 0,
+                                        left: 0,
+                                        right: 0,
+                                        height: 174,
+                                        child: Opacity(
+                                          opacity: expandedOpacity,
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: 14,
                                             ),
+                                            child: Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                // Top Row: Wallet Icon + Monthly Spend Hero + View Insights
+                                                Row(
+                                                  children: [
+                                                    Container(
+                                                      width: 46,
+                                                      height: 46,
+                                                      decoration: BoxDecoration(
+                                                        color: AppTokens.brandStart
+                                                            .withValues(alpha: 0.10),
+                                                        borderRadius:
+                                                            BorderRadius.circular(14),
+                                                      ),
+                                                      alignment: Alignment.center,
+                                                      child: categoryIcon(
+                                                        'Finance',
+                                                        size: 26,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    Expanded(
+                                                      child: Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment.start,
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                          Text(
+                                                            'Monthly spend',
+                                                            style: GoogleFonts
+                                                                .plusJakartaSans(
+                                                              color:
+                                                                  AppTokens.textMuted,
+                                                              fontSize: 12,
+                                                              fontWeight:
+                                                                  FontWeight.w500,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(height: 2),
+                                                          Row(
+                                                            mainAxisSize:
+                                                                MainAxisSize.min,
+                                                            crossAxisAlignment:
+                                                                CrossAxisAlignment
+                                                                    .center,
+                                                            children: [
+                                                              ShaderMask(
+                                                                shaderCallback:
+                                                                    (bounds) =>
+                                                                        LinearGradient(
+                                                                  colors: [
+                                                                    AppTokens
+                                                                        .brandStart,
+                                                                    AppTokens
+                                                                        .brandEnd,
+                                                                  ],
+                                                                ).createShader(
+                                                                  bounds,
+                                                                ),
+                                                                child: AnimatedBuilder(
+                                                                  animation:
+                                                                      _counterAnim,
+                                                                  builder: (_, __) =>
+                                                                      Text(
+                                                                    _fmt.format(
+                                                                      monthly *
+                                                                          _counterAnim
+                                                                              .value,
+                                                                    ),
+                                                                    style: GoogleFonts
+                                                                        .spaceGrotesk(
+                                                                      color: AppTokens
+                                                                          .brandStart,
+                                                                      fontSize: 24,
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w700,
+                                                                      letterSpacing:
+                                                                          -0.5,
+                                                                      fontFeatures: const [
+                                                                        FontFeature
+                                                                            .tabularFigures(),
+                                                                      ],
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                              const SizedBox(width: 6),
+                                                              heroIllustration(
+                                                                'piggybank_savings',
+                                                                width: 32,
+                                                                height: 32,
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                    GestureDetector(
+                                                      onTap: () {
+                                                        HapticFeedback.selectionClick();
+                                                        setState(() => _tab = 1);
+                                                      },
+                                                      child: Container(
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                          horizontal: 10,
+                                                          vertical: 6,
+                                                        ),
+                                                        decoration: BoxDecoration(
+                                                          color: AppTokens.brandStart
+                                                              .withValues(alpha: 0.10),
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                            AppTokens.rPill,
+                                                          ),
+                                                          border: Border.all(
+                                                            color: AppTokens.brandStart
+                                                                .withValues(
+                                                              alpha: 0.22,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        child: Row(
+                                                          mainAxisSize:
+                                                            MainAxisSize.min,
+                                                          children: [
+                                                            Text(
+                                                              'View insights',
+                                                              style: GoogleFonts
+                                                                  .plusJakartaSans(
+                                                                color: AppTokens
+                                                                    .brandStart,
+                                                                fontSize: 11.5,
+                                                                fontWeight:
+                                                                    FontWeight.w700,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(width: 3),
+                                                          Icon(
+                                                            Icons
+                                                                .chevron_right_rounded,
+                                                            size: 14,
+                                                            color: AppTokens
+                                                                .brandStart,
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              // Bottom Row: 3 Stat Mini-Cards
+                                              Row(
+                                                children: [
+                                                  _miniStatCard(
+                                                    icon: flatIcon(
+                                                      'grid_orange',
+                                                      color: AppTokens.brandStart,
+                                                      size: 15,
+                                                    ),
+                                                    iconBg: AppTokens.brandStart
+                                                        .withValues(alpha: 0.10),
+                                                    value: '$active',
+                                                    label: 'subscriptions',
+                                                    onTap: () =>
+                                                        setState(() => _tab = 0),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  _miniStatCard(
+                                                    icon: flatIcon(
+                                                      'calendar_orange',
+                                                      color: AppTokens.brandStart,
+                                                      size: 15,
+                                                    ),
+                                                    iconBg: AppTokens.brandStart
+                                                        .withValues(alpha: 0.10),
+                                                    value: '$renewSoonCount',
+                                                    label: 'renew soon',
+                                                    onTap: () => Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (_) =>
+                                                            CalendarScreen(
+                                                          apps: _apps,
+                                                          cats: _cats,
+                                                          ledger: _ledger,
+                                                        ),
+                                                      ),
+                                                    ).then((_) => _refresh()),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  _miniStatCard(
+                                                    icon: categoryIcon(
+                                                      'Finance',
+                                                      size: 16,
+                                                    ),
+                                                    iconBg: AppTokens.brandStart
+                                                        .withValues(alpha: 0.10),
+                                                    value: promoSavings > 0
+                                                        ? '\$${promoSavings.toStringAsFixed(0)}'
+                                                        : '\$${_analytics.getYearlyProjection(_apps).toStringAsFixed(0)}',
+                                                    label: promoSavings > 0
+                                                        ? 'potential savings'
+                                                        : 'yearly spend',
+                                                    onTap: () =>
+                                                        setState(() => _tab = 1),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      // Pills fade out (only when partially or fully expanded)
-                      if (_apps.any((a) => a.isActiveSubscription))
-                        AnimatedBuilder(
-                          animation: _scrollCtrl,
-                          builder: (_, __) {
-                            final offset = _scrollCtrl.hasClients
-                                ? _scrollCtrl.offset.clamp(0.0, double.infinity)
-                                : 0.0;
-                            final t = (offset / 96.0).clamp(0.0, 1.0);
-                            final pillOpacity = (1.0 - t * 2.0).clamp(0.0, 1.0);
-                            return AnimatedOpacity(
-                              duration: const Duration(milliseconds: 100),
-                              opacity: pillOpacity,
-                              child: Padding(
-                                padding: EdgeInsets.only(
-                                  bottom: pillOpacity > 0 ? 4 : 0,
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Flexible(
-                                      child: _pill('$active active', AppTokens.gold),
                                     ),
-                                    const SizedBox(width: 12),
-                                    if (active > 0)
-                                      Flexible(
-                                        child: _pill(
-                                          '\$${_analytics.getYearlyProjection(_apps).toStringAsFixed(0)}/yr',
-                                          AppTokens.textMuted,
+                                    // ── Collapsed Compact Sticky Bar ──
+                                    if (collapsedOpacity > 0)
+                                      Positioned(
+                                        top: 0,
+                                        left: 0,
+                                        right: 0,
+                                        height: 52,
+                                        child: Opacity(
+                                          opacity: collapsedOpacity,
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              HapticFeedback.selectionClick();
+                                              setState(() => _tab = 1);
+                                            },
+                                            child: Padding(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 16,
+                                                vertical: 8,
+                                              ),
+                                              child: Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.spaceBetween,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.center,
+                                                children: [
+                                                  Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Container(
+                                                        width: 32,
+                                                        height: 32,
+                                                        decoration: BoxDecoration(
+                                                          color: AppTokens.brandStart
+                                                              .withValues(alpha: 0.10),
+                                                          borderRadius:
+                                                              BorderRadius.circular(8),
+                                                        ),
+                                                        alignment: Alignment.center,
+                                                        child: categoryIcon(
+                                                          'Finance',
+                                                          size: 18,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      Text(
+                                                        'Monthly spend',
+                                                        style: GoogleFonts
+                                                            .plusJakartaSans(
+                                                          color: AppTokens.textMuted,
+                                                          fontSize: 12,
+                                                          fontWeight: FontWeight.w600,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      ShaderMask(
+                                                        shaderCallback: (bounds) =>
+                                                            LinearGradient(
+                                                          colors: [
+                                                            AppTokens.brandStart,
+                                                            AppTokens.brandEnd,
+                                                          ],
+                                                        ).createShader(bounds),
+                                                        child: AnimatedBuilder(
+                                                          animation: _counterAnim,
+                                                          builder: (_, __) => Text(
+                                                            _fmt.format(
+                                                              monthly *
+                                                                  _counterAnim.value,
+                                                            ),
+                                                            style: GoogleFonts
+                                                                .spaceGrotesk(
+                                                              color:
+                                                                  AppTokens.brandStart,
+                                                              fontSize: 17,
+                                                              fontWeight:
+                                                                  FontWeight.w700,
+                                                              fontFeatures: const [
+                                                                FontFeature
+                                                                    .tabularFigures(),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      Icon(
+                                                        Icons.chevron_right_rounded,
+                                                        size: 16,
+                                                        color: AppTokens.brandStart,
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
                                         ),
                                       ),
                                   ],
@@ -986,40 +1185,100 @@ class _LibraryScreenState extends State<LibraryScreen>
             ),
       bottomNavigationBar: GlassBottomNav(
         selectedIndex: _tab,
-        showOfferDot: _offersEnabled && _matchedOffers.any((m) => !_seenOfferIds.contains(m.offer.id)),
+        showOfferDot:
+            _offersEnabled &&
+            _matchedOffers.any((m) => !_seenOfferIds.contains(m.offer.id)),
         onTap: (i) {
           setState(() => _tab = i);
           if (i == 3) _markOffersSeen();
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _goAdd,
-        backgroundColor: AppTokens.gold,
-        foregroundColor: AppTokens.screenBg,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTokens.rFab),
+      floatingActionButton: PressableScale(
+        child: FloatingActionButton(
+          onPressed: _goAdd,
+          backgroundColor: AppTokens.brandStart,
+          foregroundColor: AppTokens.screenBg,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTokens.rFab),
+          ),
+          child: const Icon(Icons.add_rounded, size: 28),
         ),
-        child: const Icon(Icons.add_rounded, size: 28),
       ),
     );
   }
 
-  Widget _pill(String text, Color color) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.08),
-      borderRadius: BorderRadius.circular(AppTokens.rSmallPill),
-    ),
-    child: Text(
-      text,
-      style: GoogleFonts.plusJakartaSans(
-        color: color,
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
+  Widget _miniStatCard({
+    required Widget icon,
+    required Color iconBg,
+    required String value,
+    required String label,
+    VoidCallback? onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          if (onTap != null) {
+            HapticFeedback.selectionClick();
+            onTap();
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+          decoration: BoxDecoration(
+            color: AppTokens.fieldBg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTokens.hairline),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                alignment: Alignment.center,
+                child: icon,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.spaceGrotesk(
+                        color: AppTokens.textPrimary,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.plusJakartaSans(
+                        color: AppTokens.textMuted,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
-    ),
-  );
+    );
+  }
+
   Widget _searchField() => Container(
     height: 44,
     decoration: BoxDecoration(
@@ -1032,7 +1291,7 @@ class _LibraryScreenState extends State<LibraryScreen>
       decoration: InputDecoration(
         hintText: 'Search...',
         hintStyle: TextStyle(color: AppTokens.textPlaceholder, fontSize: 13),
-        prefixIcon: const Icon(
+        prefixIcon: Icon(
           Icons.search_rounded,
           size: 18,
           color: AppTokens.textFaint,
@@ -1073,12 +1332,12 @@ class _LibraryScreenState extends State<LibraryScreen>
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: selected
-              ? AppTokens.gold.withValues(alpha: 0.12)
+              ? AppTokens.brandStart.withValues(alpha: 0.12)
               : AppTokens.fieldBg,
           borderRadius: BorderRadius.circular(AppTokens.rPill),
           border: Border.all(
             color: selected
-                ? AppTokens.gold.withValues(alpha: 0.3)
+                ? AppTokens.brandStart.withValues(alpha: 0.3)
                 : AppTokens.hairline,
           ),
         ),
@@ -1086,16 +1345,23 @@ class _LibraryScreenState extends State<LibraryScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             if (color != null)
-              Container(
-                width: 6,
-                height: 6,
-                margin: const EdgeInsets.only(right: 6),
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: AppTokens.categories.containsKey(name)
+                    ? categoryIcon(name, size: 16)
+                    : Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
               ),
             Text(
               '$name $count',
               style: GoogleFonts.plusJakartaSans(
-                color: selected ? AppTokens.gold : AppTokens.textMuted,
+                color: selected ? AppTokens.brandStart : AppTokens.textMuted,
                 fontSize: 12.5,
                 fontWeight: FontWeight.w600,
               ),
@@ -1105,6 +1371,37 @@ class _LibraryScreenState extends State<LibraryScreen>
       ),
     ),
   );
+
+  Widget _statusRow(bool usePromo, int days, ({Color fg, Color bg})? urg) {
+    return Row(
+      children: [
+        Icon(
+          usePromo
+              ? Icons.trending_down_rounded
+              : (days <= 7
+                    ? Icons.notifications_active_rounded
+                    : Icons.schedule_rounded),
+          size: 11,
+          color: urg?.fg,
+        ),
+        const SizedBox(width: 4),
+        Text(
+          usePromo
+              ? (days >= 0
+                    ? 'Promo ends in $days day${days == 1 ? '' : 's'}'
+                    : 'Promo ended ${-days} day${-days == 1 ? '' : 's'} ago')
+              : (days >= 0
+                    ? 'Renews in $days day${days == 1 ? '' : 's'}'
+                    : 'Renewal overdue by ${-days} day${-days == 1 ? '' : 's'}'),
+          style: GoogleFonts.plusJakartaSans(
+            color: urg?.fg,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _listCard(AppEntry app) {
     final baseClr = AppTokens.categoryColor(app.category);
@@ -1135,7 +1432,7 @@ class _LibraryScreenState extends State<LibraryScreen>
         ),
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 28),
-        child: const Icon(
+        child: Icon(
           Icons.delete_outline_rounded,
           color: AppTokens.danger,
           size: 20,
@@ -1149,7 +1446,7 @@ class _LibraryScreenState extends State<LibraryScreen>
         child: Container(
           margin: const EdgeInsets.only(bottom: 14),
           padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 16),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(color: AppTokens.hairline, width: 1),
             ),
@@ -1194,34 +1491,10 @@ class _LibraryScreenState extends State<LibraryScreen>
                     ),
                     if (days != null) ...[
                       const SizedBox(height: 5),
-                      Row(
-                        children: [
-                          Icon(
-                            usePromo
-                                ? Icons.trending_down_rounded
-                                : (days <= 7
-                                    ? Icons.notifications_active_rounded
-                                    : Icons.schedule_rounded),
-                            size: 11,
-                            color: urg?.fg,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            usePromo
-                                ? (days >= 0
-                                      ? 'Promo ends in $days day${days == 1 ? '' : 's'}'
-                                      : 'Promo ended ${-days} day${-days == 1 ? '' : 's'} ago')
-                                : (days >= 0
-                                      ? 'Renews in $days day${days == 1 ? '' : 's'}'
-                                      : 'Renewal overdue by ${-days} day${-days == 1 ? '' : 's'}'),
-                            style: GoogleFonts.plusJakartaSans(
-                              color: urg?.fg,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
+                      if (usePromo && days <= 7)
+                        Pulse(child: _statusRow(usePromo, days, urg))
+                      else
+                        _statusRow(usePromo, days, urg),
                     ],
                     if (app.subscriptionCost == null ||
                         app.nextRenewalDate == null) ...[
@@ -1249,13 +1522,13 @@ class _LibraryScreenState extends State<LibraryScreen>
                               Icon(
                                 Icons.warning_amber_rounded,
                                 size: 11,
-                                color: AppTokens.gold,
+                                color: AppTokens.brandStart,
                               ),
                               const SizedBox(width: 4),
                               Text(
                                 'Tap to set billing date',
                                 style: GoogleFonts.plusJakartaSans(
-                                  color: AppTokens.gold,
+                                  color: AppTokens.brandStart,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -1326,22 +1599,20 @@ class _LibraryScreenState extends State<LibraryScreen>
         width: 44,
         height: 44,
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [baseClr, baseClr.withValues(alpha: 0.7)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          color: baseClr.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(AppTokens.rAvatar),
         ),
         child: Center(
-          child: Text(
-            app.name[0].toUpperCase(),
-            style: GoogleFonts.spaceGrotesk(
-              color: Colors.white,
-              fontSize: 19,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          child: AppTokens.categories.containsKey(app.category)
+              ? categoryIcon(app.category, size: 26)
+              : Text(
+                  app.name[0].toUpperCase(),
+                  style: GoogleFonts.spaceGrotesk(
+                    color: baseClr,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
         ),
       ),
     );
@@ -1434,7 +1705,8 @@ class _MiniMonthPreview extends StatelessWidget {
     final leadingBlanks = first.weekday - 1; // Mon=1..Sun=7 -> 0..6
     final cells = <DateTime?>[
       ...List<DateTime?>.filled(leadingBlanks, null),
-      for (var d = 1; d <= daysInMonth; d++) DateTime(month.year, month.month, d),
+      for (var d = 1; d <= daysInMonth; d++)
+        DateTime(month.year, month.month, d),
     ];
     while (cells.length % 7 != 0) {
       cells.add(null);
@@ -1443,7 +1715,7 @@ class _MiniMonthPreview extends StatelessWidget {
   }
 
   Color _dotColor(CalendarEventKind kind) => switch (kind) {
-    CalendarEventKind.renewal => AppTokens.success,
+    CalendarEventKind.renewal => AppTokens.brandStart,
     CalendarEventKind.promoEnd => AppTokens.warning,
     CalendarEventKind.projectedPastBilling => AppTokens.info,
   };
@@ -1452,12 +1724,12 @@ class _MiniMonthPreview extends StatelessWidget {
     final color = _dotColor(kind);
     final hollow = kind == CalendarEventKind.projectedPastBilling;
     return Container(
-      width: 3,
-      height: 3,
+      width: 4,
+      height: 4,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: hollow ? Colors.transparent : color,
-        border: hollow ? Border.all(color: color, width: 0.8) : null,
+        border: hollow ? Border.all(color: color, width: 1) : null,
       ),
     );
   }
@@ -1476,52 +1748,122 @@ class _MiniMonthPreview extends StatelessWidget {
     );
     final cells = _buildGridDays(month);
     const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    final duesThisMonth = events.all.length;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => CalendarScreen(apps: apps, cats: cats, ledger: ledger),
-        ),
-      ),
+      onTap: () {
+        HapticFeedback.selectionClick();
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                CalendarScreen(apps: apps, cats: cats, ledger: ledger),
+          ),
+        );
+      },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppTokens.cardBg,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: AppTokens.hairline),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(
+                alpha: AppTokens.isDark ? 0.2 : 0.03,
+              ),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Text(
-                  'Calendar',
-                  style: GoogleFonts.plusJakartaSans(
-                    color: AppTokens.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: AppTokens.brandStart.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(9),
                   ),
+                  alignment: Alignment.center,
+                  child: flatIcon(
+                    'calendar_orange',
+                    color: AppTokens.brandStart,
+                    size: 17,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Renewal Calendar',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: AppTokens.textPrimary,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      DateFormat('MMMM yyyy').format(month),
+                      style: GoogleFonts.plusJakartaSans(
+                        color: AppTokens.textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
                 const Spacer(),
-                Text(
-                  DateFormat('MMM yyyy').format(month),
-                  style: GoogleFonts.plusJakartaSans(
-                    color: AppTokens.textMuted,
-                    fontSize: 11,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 4,
                   ),
-                ),
-                const SizedBox(width: 2),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppTokens.textFaint,
-                  size: 14,
+                  decoration: BoxDecoration(
+                    color: duesThisMonth > 0
+                        ? AppTokens.brandStart.withValues(alpha: 0.10)
+                        : AppTokens.fieldBg,
+                    borderRadius: BorderRadius.circular(AppTokens.rSmallPill),
+                    border: Border.all(
+                      color: duesThisMonth > 0
+                          ? AppTokens.brandStart.withValues(alpha: 0.2)
+                          : AppTokens.hairline,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        duesThisMonth > 0
+                            ? '$duesThisMonth due'
+                            : 'None due',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: duesThisMonth > 0
+                              ? AppTokens.brandStart
+                              : AppTokens.textMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 3),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 13,
+                        color: duesThisMonth > 0
+                            ? AppTokens.brandStart
+                            : AppTokens.textMuted,
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 12),
             Row(
               children: labels
                   .map(
@@ -1531,8 +1873,8 @@ class _MiniMonthPreview extends StatelessWidget {
                           l,
                           style: GoogleFonts.plusJakartaSans(
                             color: AppTokens.textFaint,
-                            fontSize: 8,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
@@ -1540,6 +1882,7 @@ class _MiniMonthPreview extends StatelessWidget {
                   )
                   .toList(),
             ),
+            const SizedBox(height: 4),
             for (var w = 0; w < cells.length ~/ 7; w++)
               Row(
                 children: [
@@ -1550,20 +1893,20 @@ class _MiniMonthPreview extends StatelessWidget {
                 ],
               ),
             if (events.all.isEmpty) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.check_circle_rounded,
-                    color: AppTokens.success,
-                    size: 12,
+                    color: AppTokens.brandStart,
+                    size: 13,
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    'Nothing due this month',
+                    'No renewals due this month',
                     style: GoogleFonts.plusJakartaSans(
-                      color: AppTokens.success,
-                      fontSize: 11,
+                      color: AppTokens.textMuted,
+                      fontSize: 11.5,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -1581,36 +1924,41 @@ class _MiniMonthPreview extends StatelessWidget {
     Map<DateTime, List<CalendarEvent>> byDay,
     DateTime today,
   ) {
-    if (day == null) return const SizedBox(height: 22);
+    if (day == null) return const SizedBox(height: 24);
     final isToday =
-        day.year == today.year && day.month == today.month && day.day == today.day;
-    final kinds = {for (final e in byDay[day] ?? const <CalendarEvent>[]) e.kind}
-        .toList();
+        day.year == today.year &&
+        day.month == today.month &&
+        day.day == today.day;
+    final kinds = {
+      for (final e in byDay[day] ?? const <CalendarEvent>[]) e.kind,
+    }.toList();
     return SizedBox(
-      height: 22,
+      height: 24,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 15,
-            height: 15,
+            width: 17,
+            height: 17,
             alignment: Alignment.center,
             decoration: isToday
                 ? BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: AppTokens.gold, width: 1),
+                    color: AppTokens.brandStart.withValues(alpha: 0.12),
+                    border: Border.all(color: AppTokens.brandStart, width: 1),
                   )
                 : null,
             child: Text(
               '${day.day}',
               style: GoogleFonts.spaceGrotesk(
-                color: isToday ? AppTokens.gold : AppTokens.textPrimary,
-                fontSize: 9.5,
+                color: isToday ? AppTokens.brandStart : AppTokens.textPrimary,
+                fontSize: 10,
                 fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
           ),
-          if (kinds.isNotEmpty)
+          if (kinds.isNotEmpty) ...[
+            const SizedBox(height: 1),
             SizedBox(
               height: 4,
               child: Row(
@@ -1623,6 +1971,7 @@ class _MiniMonthPreview extends StatelessWidget {
                 ],
               ),
             ),
+          ],
         ],
       ),
     );
@@ -1692,10 +2041,20 @@ class _DashboardView extends StatelessWidget {
     );
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(22, 12, 22, 150),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 150),
       children: [
-        Row(
+        Stack(
+          clipBehavior: Clip.none,
           children: [
+            Positioned(
+              top: -30,
+              right: -24,
+              child: heroIllustration(
+                'piggybank_savings',
+                width: 110,
+                height: 110,
+              ),
+            ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1703,134 +2062,118 @@ class _DashboardView extends StatelessWidget {
                   'DASHBOARD',
                   style: GoogleFonts.plusJakartaSans(
                     color: AppTokens.textFaint,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1.8,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.6,
                   ),
                 ),
-                Text(
-                  'Overview',
-                  style: GoogleFonts.playfairDisplay(
-                    color: AppTokens.textStrong,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                  ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Text(
+                      'Overview',
+                      style: GoogleFonts.playfairDisplay(
+                        color: AppTokens.textStrong,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTokens.brandStart.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(
+                          AppTokens.rSmallPill,
+                        ),
+                        border: Border.all(
+                          color: AppTokens.brandStart.withValues(
+                            alpha: 0.25,
+                          ),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          flatIcon(
+                            'shield_lock_dark',
+                            color: AppTokens.brandStart,
+                            size: 11,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'ON-DEVICE',
+                            style: GoogleFonts.plusJakartaSans(
+                              color: AppTokens.brandStart,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
-            ),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppTokens.gold.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 4,
-                    height: 4,
-                    decoration: const BoxDecoration(
-                      color: AppTokens.gold,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    'DEVICE LOCAL',
-                    style: GoogleFonts.plusJakartaSans(
-                      color: AppTokens.gold,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                ],
-              ),
             ),
           ],
         ),
         const SizedBox(height: 16),
 
-        // Calendar preview — replaces the old "Coming Up" list with a
-        // month-at-a-glance view; tapping anywhere drills into the full
-        // CalendarScreen.
-        _MiniMonthPreview(apps: apps, analytics: analytics, cats: cats, ledger: ledger),
-        const SizedBox(height: 14),
-
-        // Spending History dashboard entry
-        GestureDetector(
-          onTap: onOpenSpendHistory,
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppTokens.cardBg,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppTokens.hairline),
-            ),
-            child: Row(
-              children: [
-                _iconBadge(Icons.bar_chart_rounded, AppTokens.gold),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Spending History',
-                    style: GoogleFonts.plusJakartaSans(
-                      color: AppTokens.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppTokens.textMuted,
-                  size: 18,
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 14),
-
-        // Compact stat row: one hero number, 3 secondary stats
+        // Multi-Metric Overview Hero
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
             color: AppTokens.cardBg,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(color: AppTokens.hairline),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(
+                  alpha: AppTokens.isDark ? 0.25 : 0.04,
+                ),
+                blurRadius: 14,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  flex: 4,
-                  child: Column(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Hero Top: Monthly Total
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'MONTHLY TOTAL',
+                        'MONTHLY COMMITMENT',
                         style: GoogleFonts.plusJakartaSans(
                           color: AppTokens.textFaint,
                           fontSize: 10.5,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1.2,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.3,
                         ),
                       ),
                       const SizedBox(height: 4),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
+                      ShaderMask(
+                        shaderCallback: (bounds) => LinearGradient(
+                          colors: [
+                            AppTokens.brandStart,
+                            AppTokens.brandEnd,
+                          ],
+                        ).createShader(bounds),
                         child: Text(
                           _fmt.format(monthly),
-                          maxLines: 1,
                           style: GoogleFonts.spaceGrotesk(
-                            color: AppTokens.textPrimary,
-                            fontSize: 28,
+                            color: AppTokens.brandStart,
+                            fontSize: 32,
                             fontWeight: FontWeight.w700,
                             letterSpacing: -0.5,
                             fontFeatures: const [FontFeature.tabularFigures()],
@@ -1839,25 +2182,160 @@ class _DashboardView extends StatelessWidget {
                       ),
                     ],
                   ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTokens.fieldBg,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppTokens.hairline),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          'Yearly proj.',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppTokens.textMuted,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          _fmt.format(yearly),
+                          style: GoogleFonts.spaceGrotesk(
+                            color: AppTokens.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // 3 Quick Metric Pills
+              Row(
+                children: [
+                  _dashboardMetricPill(
+                    label: 'Active Apps',
+                    value: '$active',
+                    icon: flatIcon(
+                      'grid_orange',
+                      color: AppTokens.brandStart,
+                      size: 14,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _dashboardMetricPill(
+                    label: 'Avg / Sub',
+                    value: _fmt.format(avg),
+                    icon: categoryIcon('Finance', size: 14),
+                  ),
+                  const SizedBox(width: 8),
+                  _dashboardMetricPill(
+                    label: 'Annual Cost',
+                    value: '\$${(yearly).toStringAsFixed(0)}',
+                    icon: flatIcon(
+                      'chart_trending_dark',
+                      color: AppTokens.brandStart,
+                      size: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // Calendar preview card
+        _MiniMonthPreview(
+          apps: apps,
+          analytics: analytics,
+          cats: cats,
+          ledger: ledger,
+        ),
+        const SizedBox(height: 14),
+
+        // Spending History dashboard entry
+        GestureDetector(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onOpenSpendHistory();
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: AppTokens.cardBg,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppTokens.hairline),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(
+                    alpha: AppTokens.isDark ? 0.2 : 0.03,
+                  ),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: AppTokens.brandStart.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  alignment: Alignment.center,
+                  child: flatIcon(
+                    'chart_trending_dark',
+                    color: AppTokens.brandStart,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Spending History & Ledger',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTokens.textPrimary,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        ledger.isNotEmpty
+                            ? '${ledger.length} recorded transactions · View trends'
+                            : 'Track historical payments & price changes',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTokens.textMuted,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 Container(
-                  width: 1,
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  color: AppTokens.hairline,
-                ),
-                Expanded(
-                  flex: 5,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (active > 1) ...[
-                        _statRow('Avg / app', _fmt.format(avg)),
-                        const SizedBox(height: 8),
-                      ],
-                      _statRow('Active subs', '$active'),
-                      const SizedBox(height: 8),
-                      _statRow('Yearly proj.', _fmt.format(yearly)),
-                    ],
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: AppTokens.fieldBg,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppTokens.hairline),
+                  ),
+                  child: Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 12,
+                    color: AppTokens.textMuted,
                   ),
                 ),
               ],
@@ -1866,65 +2344,76 @@ class _DashboardView extends StatelessWidget {
         ),
         const SizedBox(height: 14),
 
-        // Spending breakdown pie chart
+        // Spending breakdown donut & expense progress cards
         if (spendEntries.isNotEmpty) ...[
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
               color: AppTokens.cardBg,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(color: AppTokens.hairline),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(
+                    alpha: AppTokens.isDark ? 0.25 : 0.04,
+                  ),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'SPENDING BREAKDOWN',
-                  style: GoogleFonts.plusJakartaSans(
-                    color: AppTokens.textFaint,
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1.2,
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'SPENDING BREAKDOWN',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: AppTokens.textFaint,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.3,
+                      ),
+                    ),
+                    Text(
+                      '${spendEntries.length} Active',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: AppTokens.brandStart,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 16),
+                // Donut Chart
                 SizedBox(
-                  height: 180,
+                  height: 190,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
                       PieChart(
                         PieChartData(
-                          sectionsSpace: 2,
-                          centerSpaceRadius: 46,
+                          sectionsSpace: 3,
+                          centerSpaceRadius: 52,
                           sections: [
                             for (final e in topSpend)
                               PieChartSectionData(
                                 value: e.cost,
                                 color: AppTokens.categoryColor(e.app.category),
-                                radius: 54,
-                                title: (e.cost / monthly) >= 0.08
-                                    ? '${((e.cost / monthly) * 100).round()}%'
-                                    : '',
-                                titleStyle: GoogleFonts.plusJakartaSans(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                                radius: 36,
+                                showTitle: false,
                               ),
                             if (otherSpendTotal > 0)
                               PieChartSectionData(
                                 value: otherSpendTotal,
-                                color: AppTokens.textFaint,
-                                radius: 54,
-                                title: (otherSpendTotal / monthly) >= 0.08
-                                    ? '${((otherSpendTotal / monthly) * 100).round()}%'
-                                    : '',
-                                titleStyle: GoogleFonts.plusJakartaSans(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
+                                color: AppTokens.textFaint.withValues(
+                                  alpha: 0.5,
                                 ),
+                                radius: 36,
+                                showTitle: false,
                               ),
                           ],
                         ),
@@ -1933,11 +2422,11 @@ class _DashboardView extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            'MONTHLY',
+                            'TOTAL / MO',
                             style: GoogleFonts.plusJakartaSans(
                               color: AppTokens.textFaint,
                               fontSize: 9.5,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w700,
                               letterSpacing: 1,
                             ),
                           ),
@@ -1946,9 +2435,11 @@ class _DashboardView extends StatelessWidget {
                             _fmt.format(monthly),
                             style: GoogleFonts.spaceGrotesk(
                               color: AppTokens.textPrimary,
-                              fontSize: 16,
+                              fontSize: 17,
                               fontWeight: FontWeight.w700,
-                              fontFeatures: const [FontFeature.tabularFigures()],
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
                             ),
                           ),
                         ],
@@ -1957,22 +2448,73 @@ class _DashboardView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
+                // Top Expense Rows with Progress Bars
                 for (final e in topSpend) ...[
-                  _spendLegendRow(
-                    e.app.name,
-                    AppTokens.categoryColor(e.app.category),
-                    e.cost,
+                  _spendExpenseCard(
+                    app: e.app,
+                    cost: e.cost,
+                    monthlyTotal: monthly,
                     onTap: () => onEdit(e.app),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                 ],
-                if (otherSpend.isNotEmpty)
-                  _spendLegendRow(
-                    'Other (${otherSpend.length})',
-                    AppTokens.textFaint,
-                    otherSpendTotal,
+                if (otherSpend.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  GestureDetector(
                     onTap: () => _showOtherSpendSheet(context, otherSpend),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTokens.fieldBg,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppTokens.hairline),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: AppTokens.textFaint,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Other subscriptions (${otherSpend.length})',
+                              style: GoogleFonts.plusJakartaSans(
+                                color: AppTokens.textPrimary,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            _fmt.format(otherSpendTotal),
+                            style: GoogleFonts.spaceGrotesk(
+                              color: AppTokens.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 16,
+                            color: AppTokens.textMuted,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
+                ],
               ],
             ),
           ),
@@ -1982,34 +2524,70 @@ class _DashboardView extends StatelessWidget {
         // Savings Offers dashboard entry
         if (offersEnabled && matchedOffers.isNotEmpty)
           GestureDetector(
-            onTap: onOpenOffers,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              onOpenOffers();
+            },
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppTokens.brandEnd.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(16),
+                color: AppTokens.brandEnd.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(18),
                 border: Border.all(
-                  color: AppTokens.brandEnd.withValues(alpha: 0.15),
+                  color: AppTokens.brandEnd.withValues(alpha: 0.25),
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTokens.brandEnd.withValues(alpha: 0.12),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
               ),
               child: Row(
                 children: [
-                  _iconBadge(Icons.local_offer_rounded, AppTokens.brandEnd),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      '${matchedOffers.length} cheaper NBN/mobile plan(s) available — up to ${_fmt.format(matchedOffers.first.savingsOverPromo)} over the promo period',
-                      style: GoogleFonts.plusJakartaSans(
-                        color: AppTokens.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: AppTokens.brandEnd.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: flatIcon(
+                      'tag_orange',
+                      color: AppTokens.brandEnd,
+                      size: 18,
                     ),
                   ),
-                  const Icon(
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Cheaper Plans Available',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppTokens.textPrimary,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          '${matchedOffers.length} plan(s) found · Save up to ${_fmt.format(matchedOffers.first.savingsOverPromo)}',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppTokens.brandEnd,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
                     Icons.chevron_right_rounded,
-                    color: AppTokens.textMuted,
-                    size: 18,
+                    color: AppTokens.brandEnd,
+                    size: 20,
                   ),
                 ],
               ),
@@ -2021,84 +2599,154 @@ class _DashboardView extends StatelessWidget {
     );
   }
 
-  /// Small colored icon in a rounded-square badge — the shared accent
-  /// treatment for every single-message card on the dashboard.
-  Widget _iconBadge(IconData icon, Color color, {double size = 32}) =>
-      Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(size * 0.3),
-        ),
-        child: Icon(icon, color: color, size: size * 0.5),
-      );
-
-  Widget _statRow(String label, String value) => Row(
-    children: [
-      Expanded(
-        child: Text(
-          label,
-          style: GoogleFonts.plusJakartaSans(
-            color: AppTokens.textMuted,
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
-      Text(
-        value,
-        style: GoogleFonts.spaceGrotesk(
-          color: AppTokens.textPrimary,
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          fontFeatures: const [FontFeature.tabularFigures()],
-        ),
-      ),
-    ],
-  );
-
-  /// One row in the spending breakdown legend — color dot, app name,
-  /// monthly cost. Used for both the top-5 named slices and the
-  /// "Other (N)" aggregate row.
-  Widget _spendLegendRow(
-    String label,
-    Color color,
-    double cost, {
-    VoidCallback? onTap,
+  Widget _dashboardMetricPill({
+    required String label,
+    required String value,
+    required Widget icon,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Row(
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label,
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppTokens.fieldBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppTokens.hairline),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                icon,
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.plusJakartaSans(
+                      color: AppTokens.textMuted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              value,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.plusJakartaSans(
+              style: GoogleFonts.spaceGrotesk(
                 color: AppTokens.textPrimary,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
-          ),
-          Text(
-            _fmt.format(cost),
-            style: GoogleFonts.spaceGrotesk(
-              color: AppTokens.textPrimary,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              fontFeatures: const [FontFeature.tabularFigures()],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _spendExpenseCard({
+    required AppEntry app,
+    required double cost,
+    required double monthlyTotal,
+    required VoidCallback onTap,
+  }) {
+    final pct = monthlyTotal > 0 ? (cost / monthlyTotal) : 0.0;
+    final color = AppTokens.categoryColor(app.category);
+
+    return InkWell(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppTokens.fieldBg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppTokens.hairline),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  alignment: Alignment.center,
+                  child: categoryIcon(app.category, size: 16),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        app.name,
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTokens.textPrimary,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        app.category,
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTokens.textMuted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      _fmt.format(cost),
+                      style: GoogleFonts.spaceGrotesk(
+                        color: AppTokens.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    Text(
+                      '${(pct * 100).toStringAsFixed(0)}% of total',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: color,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: pct.clamp(0.0, 1.0),
+                minHeight: 4,
+                backgroundColor: AppTokens.hairline,
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2132,16 +2780,16 @@ class _DashboardView extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               for (final e in otherSpend) ...[
-                _spendLegendRow(
-                  e.app.name,
-                  AppTokens.categoryColor(e.app.category),
-                  e.cost,
+                _spendExpenseCard(
+                  app: e.app,
+                  cost: e.cost,
+                  monthlyTotal: analytics.getTotalMonthlyCost(apps),
                   onTap: () {
                     Navigator.pop(ctx);
                     onEdit(e.app);
                   },
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
               ],
             ],
           ),

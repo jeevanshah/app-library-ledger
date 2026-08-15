@@ -8,6 +8,7 @@ import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/add_app_screen.dart';
 import 'theme/app_theme.dart';
+import 'theme/app_tokens.dart';
 
 final _navKey = GlobalKey<NavigatorState>();
 
@@ -26,6 +27,7 @@ void main() async {
     debugPrint('Billing reconciliation failed: $e');
   }
   await SettingsService().initOffersEnabled();
+  await AppTheme.loadSavedThemeMode();
   runApp(const MyApp());
 }
 
@@ -87,19 +89,36 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: _navKey,
-      title: 'PriceMinder',
-      debugShowCheckedModeBanner: false,
-      themeMode: ThemeMode.dark,
-      theme: AppTheme.darkTheme,
-      darkTheme: AppTheme.darkTheme,
-      routes: {'/library': (_) => const LibraryScreen()},
-      home: _showSplash
-          ? SplashScreen(onComplete: () => setState(() => _showSplash = false))
-          : _showOnboarding
-          ? OnboardingScreen(onComplete: _completeOnboarding)
-          : const LibraryScreen(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppTheme.themeModeNotifier,
+      builder: (context, mode, _) {
+        return MaterialApp(
+          navigatorKey: _navKey,
+          title: 'PriceMinder',
+          debugShowCheckedModeBanner: false,
+          themeMode: mode,
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          builder: (context, child) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            AppTokens.isDark = isDark;
+            // KeyedSubtree forces the whole app subtree (every already-
+            // mounted screen) to tear down and rebuild when brightness
+            // changes. Without this, screens like LibraryScreen/
+            // SettingsScreen keep their existing State and never re-read
+            // the now-changed AppTokens.x getters — only widgets that
+            // directly listen to themeModeNotifier (like the Settings
+            // appearance picker itself) would visibly update.
+            return KeyedSubtree(key: ValueKey(isDark), child: child!);
+          },
+          routes: {'/library': (_) => const LibraryScreen()},
+          home: _showSplash
+              ? SplashScreen(onComplete: () => setState(() => _showSplash = false))
+              : _showOnboarding
+              ? OnboardingScreen(onComplete: _completeOnboarding)
+              : const LibraryScreen(),
+        );
+      },
     );
   }
 }

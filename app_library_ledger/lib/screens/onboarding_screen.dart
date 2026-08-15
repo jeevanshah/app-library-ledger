@@ -7,35 +7,35 @@ import '../theme/app_tokens.dart';
 class _Page {
   final String title;
   final String subtitle;
-  final IconData icon;
+  final String illustration;
   final Color color;
-  const _Page(this.title, this.subtitle, this.icon, this.color);
+  const _Page(this.title, this.subtitle, this.illustration, this.color);
 }
 
-const _pages = [
+List<_Page> get _pages => [
   _Page(
     'Know What You Actually Pay',
     'Every subscription and bill in one place — including promo prices, before they quietly reset.',
-    Icons.receipt_long_rounded,
-    AppTokens.gold,
+    'subscription_list_toggles',
+    AppTokens.brandStart,
   ),
   _Page(
     'Catch the Promo Cliff',
     'Get a heads-up 7 days and 1 day before a promo ends or a bill hits — before the price jumps on you.',
-    Icons.hourglass_bottom_rounded,
-    AppTokens.gold,
+    'hourglass_coins',
+    AppTokens.brandStart,
   ),
   _Page(
     'Compare Real Market Offers',
     'See live NBN and mobile plans from real providers, matched against what you pay. We show the data — you decide.',
-    Icons.compare_arrows_rounded,
-    AppTokens.gold,
+    'search_document_scan',
+    AppTokens.brandStart,
   ),
   _Page(
     '100% Private',
     'Detection and matching happen entirely on your device. Your subscriptions never leave your phone.',
-    Icons.lock_rounded,
-    AppTokens.gold,
+    'shield_lock_verified',
+    AppTokens.brandStart,
   ),
 ];
 
@@ -159,14 +159,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                                     ),
                                   ),
                                 ),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(31),
-                                  child: Image.asset(
-                                    'assets/images/logo.png',
-                                    width: 140,
-                                    height: 140,
-                                  ),
-                                ),
+                                heroIllustration(pg.illustration, width: 190, height: 190),
                               ],
                             ),
                           ),
@@ -216,7 +209,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                         width: _page == i ? 22 : 8,
                         height: 8,
                         decoration: BoxDecoration(
-                          color: _page == i ? p.color : const Color(0xFF2A2A36),
+                          color: _page == i ? p.color : AppTokens.hairlineStrong,
                           borderRadius: BorderRadius.circular(4),
                         ),
                       ),
